@@ -1,0 +1,33 @@
+# Dependencies / build output
+node_modules/
+dist/
+
+# Local database — holds scanned course data. Never commit.
+deck.db
+deck.db-journal
+deck.db-wal
+deck.db-shm
+
+# Raw text the scanner dumps so extraction quality can be eyeballed.
+# This is your course material in plain text — keep it local.
+scan-dump/
+
+# Course material folders. These normally live one level up (outside this
+# folder, so git never sees them), but if a repo is ever initialised at the
+# 4A/ level instead, these keep the actual course content out of it.
+ME[0-9][0-9][0-9]/
+ME\ [0-9][0-9][0-9]/
+HLTH[0-9][0-9][0-9]/
+HLTH\ [0-9][0-9][0-9]/
+*.zip
+
+# Logs
+*.log
+
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Escalation contacts — real names of course staff. Local only.
+server/contacts.local.json
