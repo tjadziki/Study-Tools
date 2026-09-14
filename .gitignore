@@ -31,3 +31,6 @@ desktop.ini
 
 # Escalation contacts — real names of course staff. Local only.
 server/contacts.local.json
+
+# The desktop shortcut icon is third-party artwork — local only.
+launcher/*.ico

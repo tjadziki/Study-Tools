@@ -17,6 +17,33 @@ npm run dev
 - client → http://localhost:5173
 - API → http://127.0.0.1:5174
 
+### Opening it without a terminal
+
+`launcher/start-deck.vbs` is what a desktop shortcut should point at. It
+starts both servers with no console window, waits until Vite is actually
+answering, then opens the browser — and if the deck is already up it skips
+straight to the browser, so double-clicking twice cannot start a second pair
+of servers fighting over the same ports.
+
+To make the shortcut, from PowerShell:
+
+```powershell
+$root = "<path to>\StudyHub"
+$s = (New-Object -ComObject WScript.Shell).CreateShortcut("$([Environment]::GetFolderPath('Desktop'))\Term Command Deck.lnk")
+$s.TargetPath   = "$env:SystemRoot\System32\wscript.exe"
+$s.Arguments    = "`"$root\launcher\start-deck.vbs`""
+$s.IconLocation = "$root\launcher\deck.ico,0"
+$s.WindowStyle  = 7
+$s.Save()
+```
+
+`launcher/stop-deck.cmd` stops the servers when you want the ports back;
+`launcher/start-deck.cmd` runs them in a visible window when you need to see
+why something failed.
+
+These three files must stay CRLF — `cmd.exe` misparses a batch file with Unix
+line endings — which is what `.gitattributes` is for.
+
 ## Layout
 
 ```

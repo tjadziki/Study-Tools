@@ -1,0 +1,5 @@
+# Windows script hosts require CRLF. cmd.exe misparses an LF-only batch file
+# and wscript is no happier, so these must not be normalised on checkout.
+*.cmd text eol=crlf
+*.bat text eol=crlf
+*.vbs text eol=crlf
