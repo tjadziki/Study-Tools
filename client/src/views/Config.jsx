@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import CommitInput from '../components/CommitInput.jsx';
+import ScheduleEditor from '../components/ScheduleEditor.jsx';
 
 const mono = (size, extra = {}) => ({ fontFamily: 'var(--font-mono)', fontSize: size, ...extra });
 
@@ -223,6 +224,8 @@ export default function Config({ deck, actions, onAskReset }) {
           </button>
         </div>
       </div>
+
+      <ScheduleEditor deck={deck} actions={actions} />
 
       {/* ── courses + danger zone ─────────────────────────────────────────── */}
       <div style={{ display: 'flex', gap: 20, flexWrap: 'wrap' }}>

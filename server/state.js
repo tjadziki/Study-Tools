@@ -45,6 +45,33 @@ export function buildState() {
     WHERE c.status = 'open' ORDER BY c.detectedAt DESC
   `).all();
 
+  const classBlocks = db.prepare(`
+    SELECT id, courseId, weekday, startMin, endMin, kind, label
+    FROM classBlocks ORDER BY weekday, startMin
+  `).all();
+
+  // The last fortnight of ticked study slots is all the Today view needs to
+  // draw its streak and its "hours done" meter.
+  const planLog = db.prepare(`
+    SELECT date, slotKey, courseId, taskId, minutes, doneAt
+    FROM planLog WHERE date >= date('now', '-21 days') ORDER BY date, slotKey
+  `).all();
+
+  // What to actually open. The scanner already knows every file it parsed, so
+  // the planner can name a real document rather than saying "study ME 524".
+  const materials = db.prepare(`
+    SELECT path, courseId, mtime, size
+    FROM files
+    WHERE courseId IS NOT NULL AND parseStatus = 'ok'
+    ORDER BY courseId, IFNULL(mtime, '') DESC
+  `).all().map((f) => ({
+    courseId: f.courseId,
+    path: f.path,
+    name: String(f.path).split(/[\\/]/).pop(),
+    mtime: f.mtime,
+    kind: materialKind(f.path),
+  }));
+
   const fileStats = db.prepare(`
     SELECT COUNT(*) AS total,
            SUM(CASE WHEN parseStatus = 'error' THEN 1 ELSE 0 END) AS failed
@@ -70,6 +97,9 @@ export function buildState() {
     sessions,
     termWeeks,
     conflicts,
+    classBlocks,
+    planLog,
+    materials,
     settings: getSettings(),
     meta: {
       scanRoot: SCAN_ROOT,
@@ -80,6 +110,24 @@ export function buildState() {
       serverNow: new Date().toISOString(),
     },
   };
+}
+
+/**
+ * A rough type for a course file, taken from its name. Used by the planner to
+ * pick the right thing to open: practice before an exam wants problems and
+ * solutions, an early project session wants the brief.
+ */
+function materialKind(p) {
+  const n = String(p).split(/[\\/]/).pop().toLowerCase();
+  if (/\b(outline|syllabus|schedule)\b/.test(n)) return 'outline';
+  if (/(solution|soln|answers|_sol\b)/.test(n)) return 'solutions';
+  if (/(assign|homework|\bhw\b|problem\s*set|\ba\d|_a\d)/.test(n)) return 'assignment';
+  if (/(project|proposal|report|template)/.test(n)) return 'project';
+  if (/\b(lab|tutorial)/.test(n)) return 'lab';
+  if (/(exam|midterm|test|quiz|past\s*paper)/.test(n)) return 'exam';
+  if (/(question|example|practice|problem)/.test(n)) return 'practice';
+  if (/(lecture|slide|notes|chapter|\bch\s*\d|week\s*\d|part\s*\d)/.test(n)) return 'lecture';
+  return 'material';
 }
 
 function safeRungs(raw) {

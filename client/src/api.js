@@ -38,6 +38,9 @@ export const api = {
   addConcept: (body) => call('/api/concepts', body),
   patchConcept: (id, body) => call(`/api/concepts/${encodeURIComponent(id)}`, body),
 
+  toggleSlot: (body) => call('/api/plan', body),
+  classBlocks: (blocks) => call('/api/class-blocks', { blocks }),
+
   session: (body) => call('/api/sessions', body),
   settings: (body) => call('/api/settings', body),
   reset: () => call('/api/reset', {}),

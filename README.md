@@ -43,6 +43,8 @@ the ports with `DECK_PORT` / `DECK_CLIENT_PORT`.
 | `POST /api/sessions` | Toggle a practice block, log a weekly review |
 | `POST /api/conflicts/:id` | Accept or dismiss a conflict with a confirmed date |
 | `POST /api/term-weeks` | Save / confirm the term calendar |
+| `POST /api/plan` | Tick a study block off (or untick it) |
+| `POST /api/class-blocks` | Replace the weekly timetable |
 | `POST /api/settings` | Slip days and the scoring rules |
 | `POST /api/reset` | Reseed the term (keeps the file-hash ledger) |
 
@@ -65,6 +67,46 @@ major project (Nov 30 2026), which the outline confirms.
 - Error log with a per-course review estimate
 - Exam taper at T-14 / T-7 / T-3 / T-1, warning below 15 error entries at T-14
 - Sunday weekly review ritual
+
+## The daily plan
+
+`Today` is the default view. It cuts your study window (07:30 – 21:00 by
+default) down by your timetable, splits what is left into blocks, and fills
+them from the same triage ranking the Triage view shows — so the two screens
+can never disagree.
+
+**Nothing about the plan is stored.** Confirm a date in the review queue, tick
+an item off, move a class, and the next render is already the new plan; there
+is nothing to regenerate. The only persisted thing is which blocks you
+actually worked (`planLog`), because that is a fact about the past.
+
+| Block | When it appears |
+|---|---|
+| **Deliverable** | Work due inside the planning horizon, or with no date yet |
+| **Exam prep** | A dated exam, worded from its taper position (T-14 / T-7 / T-3 / T-1) |
+| **Consolidate** | The first free block after a class, worded for lecture / lab / project meeting |
+| **Retrieval** | An exam course with nothing due — practice, and bank the misses |
+| **Read ahead** | A course with no weights or dates posted yet (ME 597) |
+| **Unblock** | A stuck concept that has been open over a week |
+
+Three rules stop it giving bad advice:
+
+- **Near work first.** Marks-per-hour alone hands the day to whatever is
+  cheapest: five 45-minute discussion posts outscore the project worth 18% of
+  the course. Anything beyond `planHorizonDays` (21) is a pull-ahead and only
+  gets the blocks left over once the day's target is met.
+- **Two blocks per task per day**, unless it is due inside 48 hours.
+- **A file is only named when it matches.** A block points at a real document
+  from the scan, chosen by matching the task's name — digits included, so
+  "Behaviour Change Pt 1" cannot open the Part 2 template. With no match, a
+  deliverable block names no file at all: pointing at the wrong brief wastes
+  the block, the same way a wrong deadline is worse than no deadline.
+
+The week strip plans seven days ahead, retiring each day's work from the next,
+so it is a plan rather than the same list seven times.
+
+Timetable and study window are editable in Config. `npm test` covers the
+planner (45 tests) alongside the date extractor.
 
 ## Scanning
 
@@ -107,7 +149,7 @@ A schedule row naming two dates — `Original Posts … Reply Post …`, or
 `Opens … Closes …` — collapses to the later one, because that is when the
 deliverable is actually finished.
 
-Run the extractor's tests with `npm test` (49 tests).
+Run the tests with `npm test` (94: 49 over extraction and matching, 45 over the planner).
 
 ## Build status
 
@@ -117,3 +159,4 @@ Run the extractor's tests with `npm test` (49 tests).
 4. ✅ Date extraction with confidence scoring; review queue
 5. ✅ Editable term calendar; week-relative resolution
 6. ✅ Confirmed dates into triage; conflict detection
+7. ✅ Daily planner: timetable, study window, Today view, week strip

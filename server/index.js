@@ -1,11 +1,13 @@
 import express from 'express';
-import { db, seedIfEmpty, setSetting, SCAN_ROOT, DB_PATH } from './db.js';
+import { db, seedIfEmpty, backfill, setSetting, SCAN_ROOT, DB_PATH } from './db.js';
 import { buildState } from './state.js';
 import { runScan } from './scan.js';
 
 const PORT = Number(process.env.DECK_PORT || 5174);
 
 seedIfEmpty();
+const filled = backfill();
+if (filled.length) console.log(`  backfilled    ${filled.join(' · ')}`);
 
 const app = express();
 app.use(express.json({ limit: '1mb' }));
@@ -344,11 +346,94 @@ app.post('/api/sessions', (req, res) => {
   ok(res);
 });
 
+/* ── POST /api/plan ─────────────────────────────────────────────────────── */
+// Tick a study slot off. The plan itself is derived and never stored — this
+// records only that the block was worked, which no amount of recomputation
+// should be able to take away.
+
+app.post('/api/plan', (req, res) => {
+  const b = req.body || {};
+  const date = String(b.date || todayIso()).slice(0, 10);
+  const slotKey = String(b.slotKey ?? '').slice(0, 16);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return bad(res, 400, 'A yyyy-mm-dd date is required.');
+  if (!slotKey) return bad(res, 400, 'slotKey is required.');
+
+  const existing = db.prepare('SELECT 1 FROM planLog WHERE date = ? AND slotKey = ?').get(date, slotKey);
+  if (existing) {
+    db.prepare('DELETE FROM planLog WHERE date = ? AND slotKey = ?').run(date, slotKey);
+    return ok(res);
+  }
+  db.prepare(`
+    INSERT INTO planLog (date, slotKey, courseId, taskId, minutes, doneAt)
+    VALUES (?, ?, ?, ?, ?, ?)
+  `).run(date, slotKey, b.courseId || null, b.taskId || null, Math.max(0, Number(b.minutes) || 0), nowIso());
+  ok(res);
+});
+
+/* ── POST /api/class-blocks ─────────────────────────────────────────────── */
+// The whole timetable in one put. Replacing it wholesale keeps the client
+// free to add, move and delete rows without a per-row protocol.
+
+app.post('/api/class-blocks', (req, res) => {
+  const blocks = Array.isArray(req.body?.blocks) ? req.body.blocks : null;
+  if (!blocks) return bad(res, 400, 'blocks[] is required.');
+
+  const known = new Set(db.prepare('SELECT id FROM courses').all().map((c) => c.id));
+  const clean = [];
+  for (const raw of blocks) {
+    const courseId = String(raw.courseId || '');
+    const weekday = Number(raw.weekday);
+    const startMin = Math.round(Number(raw.startMin));
+    const endMin = Math.round(Number(raw.endMin));
+    if (!known.has(courseId)) return bad(res, 400, `Unknown course ${courseId}.`);
+    if (!Number.isInteger(weekday) || weekday < 0 || weekday > 6) {
+      return bad(res, 400, 'weekday must be 0–6.');
+    }
+    if (!Number.isFinite(startMin) || !Number.isFinite(endMin)) {
+      return bad(res, 400, 'Class times must be numbers.');
+    }
+    if (startMin < 0 || endMin > 24 * 60) return bad(res, 400, 'Class times must be inside one day.');
+    if (endMin <= startMin) return bad(res, 400, 'A class cannot end before it starts.');
+    clean.push({
+      id: String(raw.id || `${courseId}-${weekday}-${startMin}`).slice(0, 64),
+      courseId,
+      weekday,
+      startMin,
+      endMin,
+      kind: ['LEC', 'LAB', 'TUT', 'PRJ'].includes(raw.kind) ? raw.kind : 'LEC',
+      label: String(raw.label || '').slice(0, 60),
+    });
+  }
+
+  // Two ids colliding would silently drop a class from the timetable, which
+  // would silently hand the planner an hour that does not exist.
+  const ids = new Set();
+  for (const b of clean) {
+    while (ids.has(b.id)) b.id = `${b.id}x`;
+    ids.add(b.id);
+  }
+
+  db.transaction(() => {
+    db.prepare('DELETE FROM classBlocks').run();
+    const ins = db.prepare(`
+      INSERT INTO classBlocks (id, courseId, weekday, startMin, endMin, kind, label)
+      VALUES (@id, @courseId, @weekday, @startMin, @endMin, @kind, @label)
+    `);
+    for (const b of clean) ins.run(b);
+  })();
+
+  ok(res);
+});
+
 /* ── POST /api/settings ─────────────────────────────────────────────────── */
 
 const ALLOWED_SETTINGS = new Set([
   'slipDays', 'stuckMinutes', 'minErrorsAtT14', 'examHorizonDays',
   'minutesPerErrorReview', 'termStart', 'termEnd', 'termCalendarConfirmed',
+  // the planner
+  'dayStartMin', 'dayEndMin', 'dailyTargetHours', 'weekendTargetHours',
+  'minBlockMinutes', 'maxBlockMinutes', 'breakMinutes', 'classBufferMinutes',
+  'planHorizonDays',
 ]);
 
 app.post('/api/settings', (req, res) => {

@@ -120,3 +120,30 @@ CREATE TABLE IF NOT EXISTS settings (
   key   TEXT PRIMARY KEY,
   value TEXT NOT NULL
 );
+
+-- The weekly timetable. A day's free study windows are the study window minus
+-- these blocks, so the daily plan reshapes itself when a class moves.
+CREATE TABLE IF NOT EXISTS classBlocks (
+  id       TEXT PRIMARY KEY,
+  courseId TEXT NOT NULL REFERENCES courses(id) ON DELETE CASCADE,
+  weekday  INTEGER NOT NULL,           -- 0 Sun .. 6 Sat
+  startMin INTEGER NOT NULL,           -- minutes from midnight
+  endMin   INTEGER NOT NULL,
+  kind     TEXT NOT NULL DEFAULT 'LEC',
+  label    TEXT NOT NULL DEFAULT ''
+);
+CREATE INDEX IF NOT EXISTS idx_classblocks_day ON classBlocks(weekday, startMin);
+
+-- One row per study slot ticked off on the daily plan. Keyed by the slot's
+-- start time so the same slot cannot be logged twice, and so a plan that is
+-- recomputed after a date change keeps the ticks it already earned.
+CREATE TABLE IF NOT EXISTS planLog (
+  date     TEXT NOT NULL,
+  slotKey  TEXT NOT NULL,              -- start minute of the slot, as text
+  courseId TEXT,
+  taskId   TEXT,
+  minutes  INTEGER NOT NULL DEFAULT 0,
+  doneAt   TEXT NOT NULL DEFAULT (datetime('now')),
+  PRIMARY KEY (date, slotKey)
+);
+CREATE INDEX IF NOT EXISTS idx_planlog_date ON planLog(date);

@@ -183,6 +183,32 @@ export const TERM_WEEKS = [
   { weekNumber: 13, startDate: '2026-12-07', endDate: '2026-12-08', isReadingWeek: 0 },
 ];
 
+
+/* ── the weekly timetable ──────────────────────────────────────────────────
+   Taken from the Quest schedule. Times are minutes from midnight so the
+   planner can do arithmetic on them; the Config screen edits them as clock
+   times. weekday follows Date#getDay(): 0 Sun .. 6 Sat.
+   HLTH 101 has no blocks — it is asynchronous on LEARN, which is exactly why
+   it is so easy to let slide.
+   ──────────────────────────────────────────────────────────────────────── */
+const B = (courseId, weekday, startMin, endMin, kind = 'LEC', label = '') => ({
+  id: `${courseId}-${weekday}-${startMin}`,
+  courseId, weekday, startMin, endMin, kind, label,
+});
+
+export const CLASS_BLOCKS = [
+  B('me548', 1, 600, 680, 'LEC'),          // Mon 10:00–11:20
+  B('me597', 1, 690, 770, 'LEC'),          // Mon 11:30–12:50
+  B('me481', 2, 960, 1040, 'PRJ'),         // Tue 16:00–17:20
+  B('me524', 2, 750, 860, 'LEC'),          // Tue 12:30–14:20
+  B('me548', 3, 600, 680, 'LEC'),          // Wed 10:00–11:20
+  B('me559', 3, 870, 1040, 'LEC'),         // Wed 14:30–17:20
+  B('me524', 4, 690, 740, 'LEC'),          // Thu 11:30–12:20
+  B('me597', 4, 810, 890, 'LEC'),          // Thu 13:30–14:50
+  B('me481', 4, 960, 1040, 'PRJ'),         // Thu 16:00–17:20
+  B('me548', 5, 990, 1160, 'LAB'),         // Fri 16:30–19:20
+];
+
 export const SETTINGS = {
   termStart: TERM.start,
   termEnd: TERM.end,
@@ -194,4 +220,22 @@ export const SETTINGS = {
   minErrorsAtT14: '15',
   examHorizonDays: '21',
   minutesPerErrorReview: '5.5',
+
+  // ── the daily planner ───────────────────────────────────────────────────
+  // The window you are actually willing to work in, and how much of it you
+  // are committing to. Everything the Today view shows is derived from these
+  // five numbers plus the timetable above — change one and the plan rebuilds.
+  dayStartMin: '450',          // 07:30
+  dayEndMin: '1260',           // 21:00 — the hard stop before sleep
+  dailyTargetHours: '4',
+  weekendTargetHours: '4',
+  minBlockMinutes: '45',       // shorter than this is not a study block
+  maxBlockMinutes: '110',      // longer than this and attention goes
+  breakMinutes: '15',
+  classBufferMinutes: '15',    // walking / settling either side of a class
+  // How far ahead the plan is willing to reach. Work further out than this is
+  // a pull-ahead and only gets the blocks left over once the day's target is
+  // met — otherwise a 45-minute discussion post due in November outscores the
+  // project worth 18% of the course, purely on marks per hour.
+  planHorizonDays: '21',
 };

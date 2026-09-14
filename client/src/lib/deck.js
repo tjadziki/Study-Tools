@@ -5,6 +5,7 @@
 // moved (due -> dueDate, est -> estHours, course -> courseId).
 
 import { d, iso, today, fmt, fmtShort, daysTo, shift, fridays, hm } from './dates.js';
+import { planWeek } from './plan.js';
 
 /* ── the triage priority score ──────────────────────────────────────────────
    (weight/estHours x 10) + (1/max(daysUntilDue,1) x 30) + (droppable ? -5 : 0)
@@ -438,6 +439,64 @@ export function derive(state, now) {
       status: t.status,
     }));
 
+  /* ── the daily plan ───────────────────────────────────────────────────────
+     Derived, never stored. It reads the same `scored` list the triage view
+     ranks, so the plan cannot recommend something the triage list disagrees
+     with, and a date confirmed in the review queue reshapes tomorrow with no
+     further action. Only the ticks are persisted.
+     ─────────────────────────────────────────────────────────────────────── */
+  const materialsByCourse = {};
+  for (const m of state.materials || []) {
+    (materialsByCourse[m.courseId] = materialsByCourse[m.courseId] || []).push(m);
+  }
+
+  const doneByDate = {};
+  for (const r of state.planLog || []) {
+    (doneByDate[r.date] = doneByDate[r.date] || new Set()).add(r.slotKey);
+  }
+
+  const errorCounts = Object.fromEntries(courses.map((c) => [c.id, errorsFor(c.id).length]));
+
+  const planArgs = {
+    date: iso(tdy),
+    scored,
+    classBlocks: state.classBlocks || [],
+    settings,
+    materialsByCourse,
+    code,
+    examCourses,
+    errorCounts,
+    staleConcepts: stale.map((c) => ({ courseId: c.courseId, text: c.text })),
+    // ME 597 has neither weights nor dates posted. Reading is the only thing
+    // that banks value there, so the planner is told about it explicitly.
+    unknownCourses: courses.filter((c) => !c.weightsKnown),
+    doneKeysFor: (dt) => doneByDate[dt] || new Set(),
+  };
+
+  const dueOn = (dateIso) =>
+    open
+      .filter((t) => t.dueDate === dateIso)
+      .map((t) => ({ course: code(t.courseId), title: t.title, weightStr: weightStr(t.weight) }));
+
+  const weekPlan = planWeek(planArgs, 7).map((day, i) => {
+    const dt = d(day.date);
+    return {
+      ...day,
+      isToday: i === 0,
+      dayName: dt.toLocaleDateString('en-CA', { weekday: 'short' }),
+      dayNum: String(dt.getDate()),
+      label: fmtShort(day.date),
+      capacityStr: hm(day.capacityMin),
+      committedStr: hm(day.committedMin),
+      targetStr: hm(day.targetMin),
+      doneStr: hm(day.doneMin),
+      classCount: day.classes.length,
+      due: dueOn(day.date),
+      focus: day.slots.find((s) => !s.spare && s.tag !== 'spare') || day.slots[0] || null,
+    };
+  });
+  const todayPlan = weekPlan[0];
+
   return {
     header: {
       dayStr: `${String(dayIdx).padStart(2, '0')}/${dayTotal}`,
@@ -488,6 +547,10 @@ export function derive(state, now) {
     blindSpots: courses.filter(
       (c) => !c.weightsKnown && !live.some((t) => t.courseId === c.id)
     ),
+    today: todayPlan,
+    weekPlan,
+    classBlocks: state.classBlocks || [],
+    materialsByCourse,
     candidates,
     conflicts,
     conflictRows,

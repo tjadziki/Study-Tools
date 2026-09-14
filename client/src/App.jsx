@@ -3,6 +3,7 @@ import { api } from './api.js';
 import { derive } from './lib/deck.js';
 import { nowIsoDate, fmtShort } from './lib/dates.js';
 import { runScan } from './lib/scanClient.js';
+import Today from './views/Today.jsx';
 import Triage from './views/Triage.jsx';
 import Retrieval from './views/Retrieval.jsx';
 import Exams from './views/Exams.jsx';
@@ -15,8 +16,9 @@ import ErrorDialog from './components/ErrorDialog.jsx';
 import ReviewDialog from './components/ReviewDialog.jsx';
 import ResetDialog from './components/ResetDialog.jsx';
 
-const VIEWS = ['triage', 'queue', 'retrieval', 'exams', 'review', 'calendar', 'config'];
+const VIEWS = ['today', 'triage', 'queue', 'retrieval', 'exams', 'review', 'calendar', 'config'];
 const VIEW_LABELS = {
+  today: 'Today',
   triage: 'Triage',
   queue: 'Review queue',
   retrieval: 'Retrieval bank',
@@ -35,7 +37,7 @@ export default function App() {
   const [fatal, setFatal] = useState(null);
   const [toast, setToast] = useState(null);
   const [now, setNow] = useState(Date.now());
-  const [view, setView] = useState('triage');
+  const [view, setView] = useState('today');
 
   const [stuck, setStuck] = useState(null);
   const [stuckDraft, setStuckDraft] = useState({ courseId: 'me524', text: '' });
@@ -89,6 +91,17 @@ export default function App() {
   const actions = useMemo(
     () => ({
       setStatus: (id, status) => run(() => api.patchTask(id, { status })),
+      toggleSlot: (date, slot) =>
+        run(() =>
+          api.toggleSlot({
+            date,
+            slotKey: slot.key,
+            courseId: slot.courseId || null,
+            taskId: slot.taskId || null,
+            minutes: slot.minutes,
+          })
+        ),
+      saveClassBlocks: (blocks) => run(() => api.classBlocks(blocks), 'Timetable saved.'),
       patchTask: (id, patch) => run(() => api.patchTask(id, patch)),
       deleteTask: (id) => run(() => api.deleteTask(id)),
       addTask: (body) => run(() => api.addTask(body), 'Added to the deck.'),
@@ -217,7 +230,7 @@ export default function App() {
       } else if (k === 'r') {
         e.preventDefault();
         doScan();
-      } else if ('1234567'.includes(e.key)) {
+      } else if ('12345678'.includes(e.key)) {
         setView(VIEWS[Number(e.key) - 1]);
       }
     };
@@ -486,6 +499,15 @@ export default function App() {
           </div>
         )}
 
+        {deck && view === 'today' && (
+          <Today
+            deck={deck}
+            actions={actions}
+            now={now}
+            onGoQueue={() => setView('queue')}
+            onGoConfig={() => setView('config')}
+          />
+        )}
         {deck && view === 'triage' && (
           <Triage
             deck={deck}
@@ -529,7 +551,7 @@ export default function App() {
         <span>E — LOG ERROR</span>
         <span>W — WEEKLY REVIEW</span>
         <span>R — RESCAN</span>
-        <span>1–7 — VIEWS</span>
+        <span>1–8 — VIEWS</span>
         <span>ESC — CLOSE</span>
         <span style={{ marginLeft: 'auto' }}>
           SQLITE · {state?.meta?.dbPath?.split(/[\\/]/).pop() || 'deck.db'}
