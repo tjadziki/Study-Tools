@@ -269,18 +269,31 @@ export function planDay({
 
   // Marks per hour alone would hand today to whatever is cheapest, even when
   // it is due in two months: five 45-minute discussion posts score higher than
-  // the project worth 18% of the course. So the day is built from work that is
-  // actually near — due inside the horizon, or with no date yet, since undated
-  // work is exactly what needs scoping early. Everything further out is a
-  // pull-ahead, and only gets the blocks left over once the target is met.
+  // the project worth 18% of the course. So work sorts into three tiers and
+  // the day is built from the first that still has something in it.
+  //
+  //   near     a real deadline inside the horizon (or already past)
+  //   unscoped no date at all
+  //   far      dated, but beyond the horizon
+  //
+  // Undated work sits in the middle rather than at the top. You cannot miss a
+  // deadline you have not got, so it must not outrank one you have — but it
+  // still beats pulling December's work into September, because a course whose
+  // dates were never posted is the one most likely to ambush you.
   const horizon = num('planHorizonDays', 21);
-  const isNear = (t) => t.days == null || t.days === 999 || t.days <= horizon;
-  const near = pool.filter(isNear);
-  const far = pool.filter((t) => !isNear(t));
+  const undated = (t) => t.days == null || t.days === 999;
+  const near = pool.filter((t) => !undated(t) && t.days <= horizon);
+  const unscoped = pool.filter(undated);
+  const far = pool.filter((t) => !undated(t) && t.days > horizon);
 
   // A task gets at most two blocks a day, so one deliverable cannot swallow a
-  // whole Friday — unless it is due inside 48 hours, when it should.
-  const slotCap = (t) => (t.days != null && t.days !== 999 && t.days <= 2 ? 99 : 2);
+  // whole Friday — unless it is due inside 48 hours, when it should. Undated
+  // work gets one: the instruction for it is "scope it", and scoping does not
+  // take an afternoon.
+  const slotCap = (t) => {
+    if (undated(t)) return 1;
+    return t.days <= 2 ? 99 : 2;
+  };
   const taken = {};
   const available = (list) => list.find((x) => (taken[x.id] || 0) < slotCap(x) && left(x) > 0);
 
@@ -366,13 +379,13 @@ export function planDay({
       };
     }
 
-    // Near work first. Once that is exhausted, keeping the exam courses warm
-    // beats starting something due in two months — but a block past the target
-    // is exactly where getting ahead belongs, so there the far pile comes
-    // first instead.
+    // Near work, then unscoped. Once both are exhausted, keeping the exam
+    // courses warm beats starting something due in two months — but a block
+    // past the target is exactly where getting ahead belongs, so there the far
+    // pile comes first instead.
     const t = base.spare
-      ? available(near) || available(far)
-      : available(near);
+      ? available(near) || available(unscoped) || available(far)
+      : available(near) || available(unscoped);
 
     if (t) {
       taken[t.id] = (taken[t.id] || 0) + 1;

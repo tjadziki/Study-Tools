@@ -313,12 +313,52 @@ test('keeping an exam course warm beats starting work due in two months', () => 
   assert.equal(day.slots[0].tag, 'retrieval');
 });
 
-test('an undated task counts as near — undated is exactly what needs scoping', () => {
+test('undated work is scheduled when there is nothing dated to do', () => {
   const day = planDay(
     base({ date: '2026-09-19', scored: [task('t1', { title: 'Midterm prep', days: 999 })] })
   );
   assert.equal(day.slots[0].taskId, 't1');
   assert.match(day.slots[0].action, /Scope it/);
+});
+
+test('a real deadline outranks undated work that scores higher marks per hour', () => {
+  // ME 597 posts no dates at all; its 15% presentation scores 2.5 marks/hour
+  // against an assignment due in a week at 0.8. You cannot miss a deadline you
+  // have not got, so the one you have goes first.
+  const day = planDay(
+    base({
+      scored: [
+        task('undated', { title: 'Final presentation', weight: 15, estHours: 6, days: 999, mph: 2.5, priority: 25 }),
+        task('dated', { title: 'HW 1', weight: 5, estHours: 6, days: 8, mph: 0.8, priority: 12 }),
+      ],
+    })
+  );
+  const titles = day.slots.filter((s) => s.tag === 'deliverable').map((s) => s.title);
+  assert.equal(titles[0], 'HW 1', `day opened on ${titles[0]}`);
+});
+
+test('undated work still beats pulling December into September', () => {
+  const day = planDay(
+    base({
+      date: '2026-09-19',
+      scored: [
+        task('far', { title: 'Discussion 5', days: 66 }),
+        task('undated', { title: 'Lab reports', days: 999 }),
+      ],
+    })
+  );
+  const titles = day.slots.map((s) => s.title);
+  assert.ok(
+    titles.indexOf('Lab reports') < titles.indexOf('Discussion 5'),
+    `got ${titles.join(', ')}`
+  );
+});
+
+test('undated work gets one block a day — scoping is not an afternoon', () => {
+  const day = planDay(
+    base({ date: '2026-09-19', scored: [task('t1', { estHours: 40, days: 999 })] })
+  );
+  assert.equal(day.slots.filter((s) => s.taskId === 't1').length, 1);
 });
 
 test('a block longer than the work left in a task says so', () => {

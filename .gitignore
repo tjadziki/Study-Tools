@@ -34,3 +34,6 @@ server/contacts.local.json
 
 # The desktop shortcut icon is third-party artwork — local only.
 launcher/*.ico
+
+# Database backups taken before destructive changes. Local only.
+backups/

@@ -10,10 +10,17 @@ import { fileURLToPath } from 'node:url';
 // a local reset keeps them.
 //
 // WEIGHTS are verified against the official outlines and are hardcoded here.
-// DATES are not. Every seeded component ships with dueDate = NULL so that the
-// deck cannot show a deadline nobody has confirmed. Dates arrive from the
-// scanner as candidates and become real only once confirmed in the review
-// queue. The single exception is the ME 559 major project, confirmed Nov 30.
+//
+// DATES are seeded only where an outline's own Assessments table states one,
+// and those ship userConfirmed: a date read off the official table is a fact,
+// not a parser's guess. A date the outline itself calls "tentative" ships
+// unconfirmed and waits in the review queue like any scanned candidate.
+// Everything else ships with no date at all — the deck must never show a
+// deadline nobody has confirmed.
+//
+// Roster as of 2026-09-22: ME 548 and ME 524 dropped, MTE 544 and MSE 331
+// added. HLTH 101 stays; it is asynchronous, so it appears on no timetable,
+// which is not the same thing as being gone.
 
 export const TERM = { start: '2026-09-09', end: '2026-12-08' };
 
@@ -29,32 +36,34 @@ const LOCAL_CONTACTS = (() => {
 
 const COURSE_DEFS = [
   {
-    id: 'me548', code: 'ME 548', title: 'Numerical Control of Machine Tools',
-    instructor: 'Erkorkmaz',
-    meets: 'Mon/Wed 10:00–11:20 · Fri lab 16:30–19:20',
-    contact: 'ME 548 project TAs — names on LEARN',
-    contactShort: '548 TAs', examCourse: 1, weightsKnown: 1, sortOrder: 1,
+    id: 'mte544', code: 'MTE 544', title: 'Autonomous Mobile Robots',
+    instructor: 'Yue Hu',
+    meets: 'Mon/Wed 10:00–11:20 · Mon lab 14:30–17:20 · Thu tut 15:00–15:50',
+    contact: 'MTE 544 TAs — names on LEARN',
+    contactShort: '544 TAs', examCourse: 1, weightsKnown: 1, sortOrder: 1,
+  },
+  {
+    id: 'mse331', code: 'MSE 331', title: 'Introduction to Optimization',
+    instructor: 'Alumur Alev',
+    meets: 'Tue/Thu 11:30–12:50 · Wed tut 8:30–9:20',
+    contact: 'MSE 331 TA — name on LEARN',
+    contactShort: '331 TA', examCourse: 1, weightsKnown: 1, sortOrder: 2,
   },
   {
     id: 'me559', code: 'ME 559', title: 'Finite Element Methods',
     instructor: 'Gryguc',
     meets: 'Wed 14:30–17:20',
     contact: 'ME 559 TAs — names on LEARN',
-    contactShort: '559 TAs', examCourse: 1, weightsKnown: 1, sortOrder: 2,
+    contactShort: '559 TAs', examCourse: 1, weightsKnown: 1, sortOrder: 3,
   },
   {
-    id: 'me524', code: 'ME 524', title: 'Advanced Dynamics & Vibrations',
-    instructor: 'Salehian',
-    meets: 'Tue 12:30–14:20 · Thu 11:30–12:20',
-    contact: 'Instructor — email for an appointment. No TA exists on this course.',
-    contactShort: 'Salehian', examCourse: 1, weightsKnown: 1, sortOrder: 3,
-  },
-  {
+    // No midterm and no final exam — the whole grade is coursework, which is
+    // why examCourse is 0 and nothing here ever enters the exam taper.
     id: 'me597', code: 'ME 597', title: 'Machine Learning for Mech Eng',
     instructor: 'Melek',
     meets: 'Mon 11:30–12:50 · Thu 13:30–14:50',
     contact: 'Instructor office hours',
-    contactShort: 'Melek', examCourse: 0, weightsKnown: 0, sortOrder: 4,
+    contactShort: 'Melek', examCourse: 0, weightsKnown: 1, sortOrder: 4,
   },
   {
     id: 'me481', code: 'ME 481', title: 'Design Project 1',
@@ -66,12 +75,11 @@ const COURSE_DEFS = [
   {
     id: 'hlth101', code: 'HLTH 101', title: 'Intro to Health, Illness and Wellness',
     instructor: 'online',
-    meets: 'Online · LEARN',
+    meets: 'Online · LEARN · no scheduled meetings',
     contact: 'Course staff via LEARN',
     contactShort: 'LEARN staff', examCourse: 0, weightsKnown: 1, sortOrder: 6,
   },
 ];
-
 
 export const COURSES = COURSE_DEFS.map((c) => ({
   ...c,
@@ -95,18 +103,62 @@ const C = (courseId, kind, title, weight, estHours, extra = {}) => ({
 });
 
 export const COMPONENTS = [
-  // ── ME 548 · 45 + 20 + 18 + 10 + 7 = 100
-  C('me548', 'work', 'Project 1 — CNC / MasterCAM / CMM', 18, 22, {
-    note: '10% per day late penalty — the harshest on the term.',
+  // ── MTE 544 · 40 + 10 + 15 + 35 = 100 ───────────────────────────────────
+  // Lab dates are the outline's own "tentative due dates" for the Monday
+  // section, so they ship unconfirmed and wait in the review queue.
+  C('mte544', 'work', 'Lab 1 — TurtleBot 4 / ROS2 sensors', 10, 9, {
+    dueDate: '2026-10-19', confidence: 'medium',
+    note: 'Monday section. A first version of the code is due 1–2 days before the lab itself.',
   }),
-  C('me548', 'work', 'Project 2 — cutting forces, MATLAB', 10, 14, {
-    note: '10% per day late penalty.',
+  C('mte544', 'work', 'Lab 2 — closed-loop trajectory control', 10, 9, {
+    dueDate: '2026-11-02', confidence: 'medium',
+    note: 'Monday section. Code due 1–2 days before the lab.',
   }),
-  C('me548', 'work', 'Project 3 — modal testing, FRF', 7, 10, {
-    note: '10% per day late penalty.',
+  C('mte544', 'work', 'Lab 3 — estimation and mapping', 10, 9, {
+    dueDate: '2026-11-23', confidence: 'medium',
+    note: 'Monday section. Code due 1–2 days before the lab.',
   }),
-  C('me548', 'exam', 'Midterm', 20, 10),
-  C('me548', 'exam', 'Final', 45, 20),
+  C('mte544', 'work', 'Lab 4 — planning and navigation', 10, 9, {
+    dueDate: '2026-12-07', confidence: 'medium',
+    note: 'Monday section. Code due 1–2 days before the lab.',
+  }),
+  C('mte544', 'work', 'HW 1', 5, 6, {
+    dueDate: '2026-09-30', confidence: 'medium',
+    note: 'The outline disagrees with itself: the Assessments table says Wed Sep 30 (printed "September 39th"), the Assignments section says Sep 28.',
+  }),
+  C('mte544', 'work', 'HW 2', 5, 6, {
+    dueDate: '2026-11-11', confidence: 'medium',
+    note: 'The outline disagrees with itself: the Assessments table says Wed Nov 11, the Assignments section says Nov 9.',
+  }),
+  C('mte544', 'work', 'Lab group formation', 0, 0.5, {
+    dueDate: '2026-09-25', confidence: 'high', userConfirmed: 1, dateIsEstimate: 0, free: 1,
+    note: 'Carries no marks but gates all 40% of the labs. Teams of 3, on the Excel sheet linked in LEARN.',
+  }),
+  C('mte544', 'exam', 'Midterm quiz', 15, 10, {
+    dueDate: '2026-10-29', confidence: 'high', userConfirmed: 1, dateIsEstimate: 0,
+    note: 'In person. Same day as the MSE 331 midterm.',
+  }),
+  C('mte544', 'exam', 'Final — take-home project + oral', 35, 24, {
+    dueDate: '2026-12-11', confidence: 'high', userConfirmed: 1, dateIsEstimate: 0,
+    note: 'Code and report due Dec 11, oral Dec 14–16. Both halves must be passed separately; project released Dec 2.',
+  }),
+
+  // ── MSE 331 · 35 + 10 + 10 + 45 = 100 ───────────────────────────────────
+  C('mse331', 'exam', 'Midterm exam', 35, 14, {
+    dueDate: '2026-10-29', confidence: 'high', userConfirmed: 1, dateIsEstimate: 0,
+    note: 'In class, Crowdmark. Everything to the end of Week 6. Same day as the MTE 544 midterm.',
+  }),
+  C('mse331', 'work', 'Project Part I', 10, 10, {
+    dueDate: '2026-11-17', confidence: 'high', userConfirmed: 1, dateIsEstimate: 0,
+    note: 'Teams of 3. Crowdmark. The deadline can be extended up to 48h.',
+  }),
+  C('mse331', 'work', 'Project Part II', 10, 10, {
+    dueDate: '2026-12-08', confidence: 'high', userConfirmed: 1, dateIsEstimate: 0,
+    note: 'Teams of 3. Crowdmark.',
+  }),
+  C('mse331', 'exam', 'Final exam', 45, 20, {
+    note: 'Final exam period — registrar-scheduled, so no date until the timetable is out.',
+  }),
 
   // ── ME 559 · 35 + 30 + 25 + 10 = 100. Assignments: 5 set, best 4 count.
   C('me559', 'work', 'Assignment 1', 2.5, 5, {
@@ -117,37 +169,33 @@ export const COMPONENTS = [
   C('me559', 'work', 'Assignment 4', 2.5, 5, { droppable: 1, note: 'Best 4 of 5.' }),
   C('me559', 'work', 'Assignment 5', 2.5, 5, { droppable: 1, note: 'Best 4 of 5.' }),
   C('me559', 'work', 'Major project', 25, 40, {
-    // The one date in the whole seed that is confirmed.
     dueDate: '2026-11-30', confidence: 'high', userConfirmed: 1, dateIsEstimate: 0,
     sourceSnippet: 'Confirmed from the official ME 559 outline: major project due Nov 30 2026.',
   }),
   C('me559', 'exam', 'Midterm', 30, 12),
   C('me559', 'exam', 'Final', 35, 18),
 
-  // ── ME 524 · 42 + 42 + 16 = 100. The three assignments are the only
-  // practice that exists before 84% of the grade, hence trap = 1.
-  C('me524', 'work', 'Assignment 1', 5.3, 10, {
-    trap: 1, note: 'The only practice that exists before 84% of this grade.',
+  // ── ME 597 · 48 + 12 + 25 + 15 = 100, and no exam of any kind ───────────
+  // No dates are published for any of it; labs are announced in class the
+  // week before. That makes this the course most likely to ambush you.
+  C('me597', 'work', 'Lab reports (with code)', 48, 30, {
+    note: 'Weekly case studies from Module 2 onward. Each lab is announced in class the week before.',
   }),
-  C('me524', 'work', 'Assignment 2', 5.3, 10, { trap: 1 }),
-  C('me524', 'work', 'Assignment 3', 5.4, 10, { trap: 1 }),
-  C('me524', 'exam', 'Midterm', 42, 16),
-  C('me524', 'exam', 'Final', 42, 20),
+  C('me597', 'work', 'Project proposal', 12, 8),
+  C('me597', 'work', 'Course project final report', 25, 20),
+  C('me597', 'work', 'Final presentation', 15, 6),
 
-  // ── ME 597 · weights unknown by design — extracted from the scan.
-
-  // ── ME 481 · 45 + 20 + 20 + 10 + 5 = 100
+  // ── ME 481 · 45 + 20 + 20 + 10 + 5 = 100 ────────────────────────────────
   C('me481', 'work', 'Proposal', 20, 12),
   C('me481', 'work', 'Design review', 20, 10),
-  C('me481', 'work', 'Progress meetings', 10, 6, {
-    note: 'Recurring — attendance and a short update each time.',
-  }),
+  C('me481', 'work', 'Progress meeting 1', 5, 3),
+  C('me481', 'work', 'Progress meeting 2', 5, 3),
   C('me481', 'work', 'Final report', 45, 30),
   C('me481', 'work', 'Teamwork assessment', 5, 1),
 
   // ── HLTH 101 · 45 + 20 + 20 + 15 = 100, plus a 1% bonus quiz.
-  // Discussions: 5 set, best 4 count, 5% each. Titles are the real module
-  // topics taken from the course folder.
+  // Online and asynchronous, which is why it has no timetable blocks — and
+  // exactly why it is the easiest course on the term to let slide.
   C('hlth101', 'work', 'Discussion 1 — Introduce yourself', 5, 0.75, { droppable: 1, free: 1, note: 'Best 4 of 5.' }),
   C('hlth101', 'work', 'Discussion 2 — Racism as a determinant of health', 5, 0.75, { droppable: 1, free: 1, note: 'Best 4 of 5.' }),
   C('hlth101', 'work', 'Discussion 3 — Stress and health', 5, 0.75, { droppable: 1, free: 1, note: 'Best 4 of 5.' }),
@@ -197,16 +245,18 @@ const B = (courseId, weekday, startMin, endMin, kind = 'LEC', label = '') => ({
 });
 
 export const CLASS_BLOCKS = [
-  B('me548', 1, 600, 680, 'LEC'),          // Mon 10:00–11:20
-  B('me597', 1, 690, 770, 'LEC'),          // Mon 11:30–12:50
-  B('me481', 2, 960, 1040, 'PRJ'),         // Tue 16:00–17:20
-  B('me524', 2, 750, 860, 'LEC'),          // Tue 12:30–14:20
-  B('me548', 3, 600, 680, 'LEC'),          // Wed 10:00–11:20
-  B('me559', 3, 870, 1040, 'LEC'),         // Wed 14:30–17:20
-  B('me524', 4, 690, 740, 'LEC'),          // Thu 11:30–12:20
-  B('me597', 4, 810, 890, 'LEC'),          // Thu 13:30–14:50
-  B('me481', 4, 960, 1040, 'PRJ'),         // Thu 16:00–17:20
-  B('me548', 5, 990, 1160, 'LAB'),         // Fri 16:30–19:20
+  B('mte544', 1, 600, 680, 'LEC'),         // Mon 10:00–11:20  RCH 307
+  B('me597',  1, 690, 770, 'LEC'),         // Mon 11:30–12:50  DWE 2402
+  B('mte544', 1, 870, 1040, 'LAB'),        // Mon 14:30–17:20  E3 3178 (section 101)
+  B('mse331', 2, 690, 770, 'LEC'),         // Tue 11:30–12:50  CPH 3681
+  B('me481',  2, 960, 1040, 'PRJ'),        // Tue 16:00–17:20  MC 4045
+  B('mse331', 3, 510, 560, 'TUT'),         // Wed 08:30–09:20  E2 1736
+  B('mte544', 3, 600, 680, 'LEC'),         // Wed 10:00–11:20  RCH 307
+  B('me559',  3, 870, 1040, 'LEC'),        // Wed 14:30–17:20  MC 4041
+  B('mse331', 4, 690, 770, 'LEC'),         // Thu 11:30–12:50  CPH 3681
+  B('me597',  4, 810, 890, 'LEC'),         // Thu 13:30–14:50  E5 3101
+  B('mte544', 4, 900, 950, 'TUT'),         // Thu 15:00–15:50  E5 3101
+  B('me481',  4, 960, 1040, 'PRJ'),        // Thu 16:00–17:20  MC 4045
 ];
 
 export const SETTINGS = {
