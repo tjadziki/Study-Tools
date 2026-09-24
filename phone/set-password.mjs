@@ -11,23 +11,53 @@ import { spawnSync } from 'node:child_process';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { hashPassword } from './api/_lib.js';
+import { childEnv } from './child-env.mjs';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 
-function ask(question, { hidden = false } = {}) {
+function ask(question) {
   return new Promise((resolve) => {
     const rl = readline.createInterface({ input: process.stdin, output: process.stdout, terminal: true });
-    if (hidden) {
-      // Print the prompt, swallow the keystrokes.
-      rl._writeToOutput = (s) => {
-        if (s.startsWith(question)) rl.output.write(question);
-      };
-    }
     rl.question(question, (answer) => {
       rl.close();
-      if (hidden) process.stdout.write('\n');
       resolve(answer);
     });
+  });
+}
+
+/**
+ * Read a line without echoing it. Raw mode, one keystroke at a time: the
+ * readline trick of muting its output reprints the prompt on every key in
+ * some terminals.
+ */
+function askHidden(question) {
+  return new Promise((resolve) => {
+    const stdin = process.stdin;
+    process.stdout.write(question);
+    let value = '';
+    const done = () => {
+      stdin.setRawMode(false);
+      stdin.pause();
+      stdin.off('data', onData);
+      process.stdout.write('\n');
+      resolve(value);
+    };
+    const onData = (chunk) => {
+      for (const ch of chunk) {
+        if (ch === '\r' || ch === '\n' || ch === '\u0004') return done(); // Enter, Ctrl+D
+        if (ch === '\u0003') {
+          stdin.setRawMode(false);
+          process.stdout.write('\n');
+          process.exit(130); // Ctrl+C
+        }
+        if (ch === '\u007f' || ch === '\b') value = value.slice(0, -1); // Backspace
+        else if (ch >= ' ') value += ch;
+      }
+    };
+    stdin.setRawMode(true);
+    stdin.setEncoding('utf8');
+    stdin.resume();
+    stdin.on('data', onData);
   });
 }
 
@@ -38,6 +68,7 @@ function vercel(args, input) {
     stdio: [input == null ? 'inherit' : 'pipe', 'pipe', 'pipe'],
     shell: process.platform === 'win32',
     encoding: 'utf8',
+    env: childEnv(),
   });
   return r;
 }
@@ -58,12 +89,12 @@ if (!/^[a-z0-9._-]{3,32}$/.test(username)) {
   console.error('Use 3–32 letters, numbers, dots, dashes or underscores.');
   process.exit(1);
 }
-const password = await ask('Password (at least 12 characters): ', { hidden: true });
+const password = await askHidden('Password (at least 12 characters): ');
 if (password.length < 12) {
   console.error('Too short. Twelve characters or more — a phrase is easiest to remember.');
   process.exit(1);
 }
-const again = await ask('Password again: ', { hidden: true });
+const again = await askHidden('Password again: ');
 if (again !== password) {
   console.error('Those did not match. Nothing was changed.');
   process.exit(1);
@@ -79,5 +110,5 @@ setEnv('DECK_PASS_HASH', hash);
 console.log('done.');
 
 console.log('Redeploying so it takes effect…\n');
-const d = spawnSync(process.execPath, [path.join(here, 'deploy.mjs')], { stdio: 'inherit' });
+const d = spawnSync(process.execPath, [path.join(here, 'deploy.mjs')], { stdio: 'inherit', env: childEnv() });
 process.exit(d.status ?? 0);

@@ -10,6 +10,7 @@
 import { spawnSync } from 'node:child_process';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { childEnv } from './child-env.mjs';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 
@@ -18,6 +19,7 @@ function vercel(args) {
     cwd: here,
     stdio: 'inherit',
     shell: process.platform === 'win32',
+    env: childEnv(),
   });
   if (r.status !== 0) process.exit(r.status ?? 1);
 }
