@@ -43,9 +43,9 @@ function vercel(args, input) {
 }
 
 function setEnv(name, value) {
-  // Replace, not add: `env add` refuses a name that already exists.
-  vercel(['env', 'rm', name, 'production', '--yes']);
-  const r = vercel(['env', 'add', name, 'production'], value);
+  // --force replaces an existing value; --sensitive makes it write-only, so
+  // not even the Vercel dashboard can show it back.
+  const r = vercel(['env', 'add', name, 'production', '--sensitive', '--force', '--yes'], value);
   if (r.status !== 0) {
     console.error(`\nCould not save ${name} to Vercel:\n${r.stderr || r.stdout}`);
     process.exit(1);
