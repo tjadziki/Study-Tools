@@ -9,6 +9,8 @@ const API_PORT = process.env.DECK_PORT || 5174;
 export default defineConfig({
   root: here,
   plugins: [react()],
+  // shadcn/ui's convention: '@/components/ui/button' rather than a ladder of '../'.
+  resolve: { alias: { '@': path.resolve(here, 'src') } },
   server: {
     port: Number(process.env.DECK_CLIENT_PORT || 5173),
     strictPort: false,

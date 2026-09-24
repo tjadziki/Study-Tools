@@ -1,175 +1,131 @@
 import React from 'react';
-
-const mono = (size, extra = {}) => ({ fontFamily: 'var(--font-mono)', fontSize: size, ...extra });
+import { cn } from '@/lib/utils';
+import { Button } from '@/components/ui/button';
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogFooter,
+  DialogTitle,
+  DialogDescription,
+  DialogEyebrow,
+} from '@/components/ui/dialog';
+import { Input, Textarea } from '@/components/ui/input';
+import { Badge } from '@/components/ui/badge';
+import { CheckCircle } from '@/components/ui/misc';
 
 export default function ReviewDialog({
-  deck, step, setStep, actions, reflectionDraft, setReflectionDraft, onClose, onFinish,
+  open, deck, step, setStep, actions, reflectionDraft, setReflectionDraft, onClose, onFinish,
 }) {
   const top5 = deck.triage.rows.slice(0, 5);
 
   return (
-    <div className="dialog-backdrop" style={{ zIndex: 60, alignItems: 'flex-start', paddingTop: '5vh' }}>
-      <div className="dialog" style={{ width: 'min(620px, 100%)' }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: 10 }}>
-          <div style={{ ...mono(9.5), letterSpacing: '.15em', color: 'var(--color-accent)' }}>
-            WEEKLY REVIEW · STEP {String(Math.max(1, step + 1)).padStart(2, '0')} OF 04
-          </div>
-          <div style={mono(10.5, { color: 'rgba(238,243,248,.4)' })}>~20 MIN</div>
-        </div>
-
-        {step === 0 && (
-          <>
-            <div className="dialog-title">Every concept older than 7 days gets closed or escalated.</div>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 0, maxHeight: '44vh', overflow: 'auto' }}>
-              {deck.stale.map((rc) => (
-                <div key={rc.id} style={{ borderTop: '1px solid rgba(238,243,248,.12)', padding: '10px 0' }}>
-                  <div style={{ display: 'flex', gap: 8, alignItems: 'baseline' }}>
-                    <span style={{ ...mono(10.5), letterSpacing: '.09em', color: 'var(--color-accent)', whiteSpace: 'nowrap' }}>
-                      {rc.course}
-                    </span>
-                    <span style={mono(10.5, { color: 'var(--sig)' })}>{rc.ageStr}</span>
-                  </div>
-                  <div style={{ fontSize: 13.5, lineHeight: 1.45, marginTop: 3, textWrap: 'pretty' }}>{rc.text}</div>
-                  <div style={{ display: 'flex', gap: 7, marginTop: 7, flexWrap: 'wrap' }}>
-                    <button
-                      className="btn btn-secondary"
-                      onClick={() => actions.resolveConcept(rc.id)}
-                      style={{ fontSize: 11.5, padding: '4px 9px' }}
-                    >
-                      Resolved
-                    </button>
-                    <button
-                      className="btn btn-secondary"
-                      onClick={() => actions.escalateConcept(rc.id)}
-                      style={{ fontSize: 11.5, padding: '4px 9px', whiteSpace: 'nowrap' }}
-                    >
-                      Booked with {deck.byId[rc.courseId]?.contactShort || 'the course'}
-                    </button>
-                  </div>
-                </div>
+    <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
+      <DialogContent className="w-[min(620px,calc(100vw-2rem))]">
+        <DialogHeader>
+          <div className="flex items-center gap-3">
+            <DialogEyebrow tone="blue">Weekly review</DialogEyebrow>
+            {/* Four dots for four steps, as a page control. */}
+            <div className="flex gap-1.5" aria-label={`Step ${step + 1} of 4`}>
+              {[0, 1, 2, 3].map((i) => (
+                <span key={i} className={cn('size-1.5 rounded-full', i === step ? 'bg-primary' : 'bg-label-3')} />
               ))}
             </div>
-            {deck.stale.length === 0 && (
-              <div style={{ fontSize: 13.5, color: 'rgba(238,243,248,.6)' }}>
-                Nothing older than 7 days. Clean board.
+            <span className="text-caption text-muted-foreground">~20 min</span>
+          </div>
+          <DialogTitle>
+            {step === 0 && 'Every concept older than 7 days gets closed or escalated.'}
+            {step === 1 && `Next week’s practice blocks — ${deck.nextFridayStr}.`}
+            {step === 2 && 'Re-estimate the top 5. Bad estimates corrupt the ranking.'}
+            {step === 3 && 'What actually ate my time this week?'}
+          </DialogTitle>
+        </DialogHeader>
+
+        {step === 0 && (
+          <div className="flex flex-col">
+            {deck.stale.map((rc, i) => (
+              <div key={rc.id} className={cn('py-3', i > 0 && 'border-t border-border')}>
+                <div className="flex items-center gap-2">
+                  <span className="text-footnote font-semibold text-tint-blue">{rc.course}</span>
+                  <Badge tone="orange">{rc.ageStr}</Badge>
+                </div>
+                <p className="mt-1 text-subhead text-pretty">{rc.text}</p>
+                <div className="mt-2 flex flex-wrap gap-2">
+                  <Button variant="tinted" size="sm" onClick={() => actions.resolveConcept(rc.id)}>Resolved</Button>
+                  <Button variant="gray" size="sm" onClick={() => actions.escalateConcept(rc.id)}>
+                    Booked with {deck.byId[rc.courseId]?.contactShort || 'the course'}
+                  </Button>
+                </div>
               </div>
-            )}
-          </>
+            ))}
+            {deck.stale.length === 0 && <DialogDescription>Nothing older than 7 days. Clean board.</DialogDescription>}
+          </div>
         )}
 
         {step === 1 && (
-          <>
-            <div className="dialog-title">Next week's practice blocks — {deck.nextFridayStr}.</div>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 7 }}>
-              {deck.nextBlocks.map((nb) => (
-                <button
-                  key={nb.courseId}
-                  onClick={() => actions.togglePlanned(nb.date, nb.courseId)}
-                  style={{
-                    appearance: 'none',
-                    background: 'transparent',
-                    border: '1px solid var(--color-divider)',
-                    padding: '9px 11px',
-                    cursor: 'pointer',
-                    color: 'var(--color-text)',
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: 10,
-                    textAlign: 'left',
-                    font: 'inherit',
-                  }}
-                >
-                  {nb.done ? (
-                    <span
-                      style={{
-                        ...mono(12),
-                        width: 16,
-                        height: 16,
-                        flex: 'none',
-                        display: 'grid',
-                        placeItems: 'center',
-                        background: 'var(--color-accent)',
-                        color: '#151f29',
-                      }}
-                    >
-                      ✓
-                    </span>
-                  ) : (
-                    <span style={{ width: 16, height: 16, flex: 'none', border: '1px solid rgba(238,243,248,.35)' }} />
-                  )}
-                  <span style={{ ...mono(12), letterSpacing: '.06em' }}>{nb.course} · 90 MIN · SCHEDULED</span>
-                </button>
-              ))}
-            </div>
-          </>
+          <div className="overflow-hidden rounded-xl bg-secondary/60">
+            {deck.nextBlocks.map((nb, i) => (
+              <button
+                key={nb.courseId}
+                role="checkbox"
+                aria-checked={nb.done}
+                onClick={() => actions.togglePlanned(nb.date, nb.courseId)}
+                className={cn('flex w-full items-center gap-3 px-4 py-3 text-left hover:bg-secondary', i > 0 && 'border-t border-border')}
+              >
+                <CheckCircle checked={nb.done} decorative />
+                <span className="text-subhead font-medium">{nb.course} · 90 min</span>
+                <span className="ml-auto text-footnote text-muted-foreground">{nb.done ? 'Scheduled' : 'Not yet'}</span>
+              </button>
+            ))}
+          </div>
         )}
 
         {step === 2 && (
-          <>
-            <div className="dialog-title">Re-estimate the top 5. Bad estimates corrupt the ranking.</div>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 9 }}>
-              {top5.map((rt) => (
-                <div
-                  key={rt.id}
-                  style={{
-                    display: 'flex',
-                    gap: 11,
-                    alignItems: 'center',
-                    borderTop: '1px solid rgba(238,243,248,.12)',
-                    paddingTop: 9,
-                  }}
-                >
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{ ...mono(10.5), letterSpacing: '.09em', color: 'var(--color-accent)', whiteSpace: 'nowrap' }}>
-                      {rt.course}
-                    </div>
-                    <div style={{ fontSize: 13.5 }}>{rt.title}</div>
-                  </div>
-                  <input
-                    className="input"
-                    key={`${rt.id}-${rt.estStr}`}
-                    defaultValue={parseFloat(rt.estStr)}
-                    onBlur={(e) => {
-                      const v = Number(e.target.value);
-                      if (!Number.isNaN(v) && v > 0) actions.patchTask(rt.id, { estHours: v });
-                    }}
-                    style={{ flex: 'none', width: 76, ...mono(12.5), minHeight: 32 }}
-                  />
-                  <span style={{ ...mono(11), color: 'rgba(238,243,248,.4)', flex: 'none' }}>hours</span>
+          <div className="flex flex-col">
+            {top5.map((rt, i) => (
+              <div key={rt.id} className={cn('flex items-center gap-3 py-2.5', i > 0 && 'border-t border-border')}>
+                <div className="min-w-0 flex-1">
+                  <div className="text-footnote font-semibold text-tint-blue">{rt.course}</div>
+                  <div className="truncate text-subhead">{rt.title}</div>
                 </div>
-              ))}
-            </div>
-          </>
+                <Input
+                  key={`${rt.id}-${rt.estStr}`}
+                  aria-label={`${rt.title} estimated hours`}
+                  inputMode="decimal"
+                  defaultValue={parseFloat(rt.estStr)}
+                  onBlur={(e) => {
+                    const v = Number(e.target.value);
+                    if (!Number.isNaN(v) && v > 0) actions.patchTask(rt.id, { estHours: v });
+                  }}
+                  className="w-20"
+                />
+                <span className="text-footnote text-muted-foreground">hours</span>
+              </div>
+            ))}
+          </div>
         )}
 
         {step === 3 && (
-          <>
-            <div className="dialog-title">What actually ate my time this week?</div>
-            <textarea
-              className="input"
-              style={{ fontSize: 13.5, minHeight: 80 }}
-              value={reflectionDraft}
-              onChange={(e) => setReflectionDraft(e.target.value)}
-              placeholder="One line. Honest."
-            />
-          </>
+          <Textarea
+            autoFocus
+            value={reflectionDraft}
+            onChange={(e) => setReflectionDraft(e.target.value)}
+            placeholder="One line. Honest."
+          />
         )}
 
-        <div className="dialog-actions">
-          <button className="btn btn-secondary" onClick={onClose} style={{ fontSize: 12.5, whiteSpace: 'nowrap' }}>
-            Later
-          </button>
-          {step < 3 ? (
-            <button className="btn btn-primary" onClick={() => setStep(Math.min(3, step + 1))} style={{ fontSize: 12.5 }}>
-              Next
-            </button>
-          ) : (
-            <button className="btn btn-primary" onClick={onFinish} style={{ fontSize: 12.5, whiteSpace: 'nowrap' }}>
-              Close the week
-            </button>
+        <DialogFooter>
+          {step > 0 && (
+            <Button variant="plain" className="mr-auto" onClick={() => setStep(step - 1)}>Back</Button>
           )}
-        </div>
-      </div>
-    </div>
+          <Button variant="gray" onClick={onClose}>Later</Button>
+          {step < 3 ? (
+            <Button onClick={() => setStep(Math.min(3, step + 1))}>Next</Button>
+          ) : (
+            <Button onClick={onFinish}>Close the week</Button>
+          )}
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }

@@ -1,80 +1,62 @@
 import React from 'react';
-
-const mono = (size, extra = {}) => ({ fontFamily: 'var(--font-mono)', fontSize: size, ...extra });
-const kicker = { ...mono(9), letterSpacing: '.16em', color: 'rgba(238,243,248,.45)' };
+import { NotebookPen } from 'lucide-react';
+import { Button } from '@/components/ui/button';
+import { Card } from '@/components/ui/card';
+import { Stat, Kbd } from '@/components/ui/misc';
+import { ListSection, ListRow } from '@/components/ui/list';
 
 const STEPS = [
-  { n: '01', text: 'Close out or escalate every open concept older than 7 days.', tail: true },
-  { n: '02', text: "Confirm next week's three practice blocks are in the calendar." },
-  { n: '03', text: 'Re-estimate hours on the top 5 triage items — bad estimates corrupt the ranking.' },
-  { n: '04', text: 'One line: what actually ate my time this week?' },
+  { text: 'Close out or escalate every open concept older than 7 days.', tail: true },
+  { text: 'Confirm next week’s practice blocks are in the calendar.' },
+  { text: 'Re-estimate hours on the top 5 triage items — bad estimates corrupt the ranking.' },
+  { text: 'One line: what actually ate my time this week?' },
 ];
 
 export default function WeeklyReview({ deck, onStart }) {
   return (
-    <div style={{ display: 'flex', gap: 20, flexWrap: 'wrap', alignItems: 'flex-start' }}>
-      <div style={{ flex: '1 1 440px', minWidth: 0, display: 'flex', flexDirection: 'column', gap: 14 }}>
-        <div style={{ display: 'flex', alignItems: 'baseline', gap: 12, flexWrap: 'wrap' }}>
-          <h6 style={{ margin: 0, color: 'var(--color-accent)', whiteSpace: 'nowrap' }}>Sunday weekly review</h6>
-          <span style={{ fontSize: 12, color: 'rgba(238,243,248,.5)' }}>
-            20 minutes · the habit that holds the rest together
-          </span>
-        </div>
+    <div className="grid items-start gap-8 lg:grid-cols-[minmax(0,1fr)_380px]">
+      <div className="flex min-w-0 flex-col gap-6">
+        <Card className="flex flex-wrap items-end gap-8 p-6">
+          <Stat label="Streak" value={deck.header.reviewStreakStr} size="lg" />
+          <Stat label="Last review" value={deck.lastReviewStr} size="sm" />
+          <Stat label="Next due" value={deck.nextReviewStr} size="sm" tone="blue" />
+          <Button size="lg" onClick={onStart} className="ml-auto">
+            <NotebookPen />
+            Run the review
+            <Kbd className="border-white/30 bg-white/15 text-white shadow-none">W</Kbd>
+          </Button>
+        </Card>
 
-        <div className="blueprint" style={{ padding: '18px 20px' }}>
-          <i className="corner tl" />
-          <i className="corner tr" />
-          <i className="corner bl" />
-          <i className="corner br" />
-          <div style={{ display: 'flex', gap: 26, flexWrap: 'wrap', alignItems: 'flex-end' }}>
-            <div>
-              <div style={kicker}>STREAK</div>
-              <div style={mono(38, { lineHeight: 1 })}>{deck.header.reviewStreakStr}</div>
-            </div>
-            <div>
-              <div style={kicker}>LAST REVIEW</div>
-              <div style={mono(15)}>{deck.lastReviewStr}</div>
-              <div style={{ ...kicker, marginTop: 9 }}>NEXT DUE</div>
-              <div style={mono(15, { color: 'var(--color-accent)' })}>{deck.nextReviewStr}</div>
-            </div>
-            <button
-              className="btn btn-primary"
-              onClick={onStart}
-              style={{ fontSize: 13, letterSpacing: '.07em', marginLeft: 'auto', gap: 8, whiteSpace: 'nowrap' }}
-            >
-              Run the review{' '}
-              <span style={{ ...mono(10), border: '1px solid rgba(21,31,41,.35)', padding: '0 4px' }}>W</span>
-            </button>
-          </div>
-
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 0, marginTop: 16 }}>
-            {STEPS.map((s) => (
-              <div key={s.n} style={{ display: 'flex', gap: 11, padding: '9px 0', borderTop: '1px solid rgba(238,243,248,.12)' }}>
-                <span style={{ ...mono(11), color: 'var(--color-accent)', flex: 'none' }}>{s.n}</span>
-                <span style={{ fontSize: 13.5 }}>
-                  {s.text}
-                  {s.tail && <span style={{ color: 'rgba(238,243,248,.5)' }}> {deck.staleCountStr}</span>}
-                </span>
-              </div>
-            ))}
-          </div>
-        </div>
+        <ListSection header="The four steps" footer="About twenty minutes, every Sunday.">
+          {STEPS.map((s, i) => (
+            <ListRow key={i} className="items-start py-3" style={{ '--sep-inset': '3.25rem' }}>
+              <span className="grid size-6 shrink-0 place-items-center rounded-full bg-primary/15 text-caption font-bold text-tint-blue">
+                {i + 1}
+              </span>
+              <span className="text-subhead text-pretty">
+                {s.text}
+                {s.tail && <span className="text-muted-foreground"> {deck.staleCountStr}</span>}
+              </span>
+            </ListRow>
+          ))}
+        </ListSection>
       </div>
 
-      <div style={{ flex: '1 1 300px', maxWidth: 440, minWidth: 0, display: 'flex', flexDirection: 'column', gap: 10 }}>
-        <h6 style={{ margin: 0, color: 'var(--color-accent)', whiteSpace: 'nowrap' }}>Reflection log</h6>
+      <ListSection header="Reflection log">
         {deck.reviews.map((rf, i) => (
-          <div key={i} className="card" style={{ padding: '12px 14px', gap: 4 }}>
-            <div style={{ ...mono(10.5), letterSpacing: '.09em', color: 'rgba(238,243,248,.45)' }}>{rf.dateStr}</div>
-            <div style={{ fontSize: 13.5, lineHeight: 1.45, textWrap: 'pretty' }}>{rf.text}</div>
-          </div>
+          <ListRow key={i} className="flex-col items-start gap-0.5 py-3">
+            <span className="text-caption font-medium text-muted-foreground">{rf.dateStr}</span>
+            <span className="text-subhead text-pretty">{rf.text}</span>
+          </ListRow>
         ))}
         {deck.reviews.length === 0 && (
-          <div style={{ fontSize: 13, color: 'rgba(238,243,248,.45)' }}>
-            No reviews logged yet. The first one is due {deck.nextReviewStr}.
-          </div>
+          <ListRow>
+            <span className="text-footnote text-muted-foreground">
+              No reviews logged yet. The first one is due {deck.nextReviewStr}.
+            </span>
+          </ListRow>
         )}
-      </div>
+      </ListSection>
     </div>
   );
 }

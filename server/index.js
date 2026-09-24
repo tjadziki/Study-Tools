@@ -2,6 +2,7 @@ import express from 'express';
 import { db, seedIfEmpty, backfill, setSetting, SCAN_ROOT, DB_PATH } from './db.js';
 import { buildState } from './state.js';
 import { runScan } from './scan.js';
+import { scheduleSync, syncNow, syncStatus } from './phoneSync.js';
 
 const PORT = Number(process.env.DECK_PORT || 5174);
 
@@ -12,8 +13,20 @@ if (filled.length) console.log(`  backfilled    ${filled.join(' · ')}`);
 const app = express();
 app.use(express.json({ limit: '1mb' }));
 
-// Localhost only. Nothing here leaves the machine.
-const ok = (res, extra = {}) => res.json({ ok: true, state: buildState(), ...extra });
+// The deck, plus whether the phone copy is current.
+const stateNow = () => {
+  const s = buildState();
+  s.meta.phoneSync = syncStatus();
+  return s;
+};
+
+// Every mutation answers through ok(), so every mutation also queues a phone
+// sync. With no phone.local.json that is a no-op and nothing leaves the
+// machine.
+const ok = (res, extra = {}) => {
+  scheduleSync();
+  res.json({ ok: true, state: stateNow(), ...extra });
+};
 const bad = (res, code, message) => res.status(code).json({ ok: false, error: message });
 
 const nowIso = () => new Date().toISOString();
@@ -26,7 +39,15 @@ const rid = (p) => `${p}_${Date.now().toString(36)}${Math.random().toString(36).
 /* ── GET /api/state ─────────────────────────────────────────────────────── */
 
 app.get('/api/state', (_req, res) => {
-  res.json({ ok: true, state: buildState() });
+  res.json({ ok: true, state: stateNow() });
+});
+
+/* ── POST /api/phone-sync ───────────────────────────────────────────────── */
+// Push to the phone now rather than in a few seconds.
+
+app.post('/api/phone-sync', async (_req, res) => {
+  const status = await syncNow({ force: true });
+  res.json({ ok: !status.lastError, phoneSync: status, state: stateNow() });
 });
 
 /* ── POST /api/scan ─────────────────────────────────────────────────────── */
@@ -57,7 +78,8 @@ app.post('/api/scan', async (req, res) => {
       const { extracted, ...rest } = ev;
       send(rest);
     }
-    send({ type: 'state', state: buildState() });
+    scheduleSync();
+    send({ type: 'state', state: stateNow() });
   } catch (e) {
     console.error('[scan] failed:', e);
     send({ type: 'error', error: e.message });
@@ -455,6 +477,8 @@ app.post('/api/reset', (_req, res) => {
 app.use('/api', (_req, res) => bad(res, 404, 'No such endpoint.'));
 
 app.listen(PORT, '127.0.0.1', () => {
+  // Bring the phone up to date with whatever changed while the deck was shut.
+  scheduleSync(1500);
   console.log(`  deck server   http://127.0.0.1:${PORT}`);
   console.log(`  database      ${DB_PATH}`);
   console.log(`  scan root     ${SCAN_ROOT}`);

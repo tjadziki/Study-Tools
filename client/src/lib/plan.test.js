@@ -486,3 +486,28 @@ test('a task that has run out of slack may take the whole day', () => {
   const day = planDay(base({ date: '2026-09-19', scored: [task('t1', { estHours: 40, days: 10 })] }));
   assert.ok(day.slots.filter((s) => s.taskId === 't1').length > 2);
 });
+
+test('a missed block does not use up the estimate — the work moves forward', () => {
+  // 3 h of work due in 2 days. By 21:00 every block today has passed unworked.
+  const t = task('t1', { estHours: 3, days: 2 });
+  const week = planWeek(base({ date: '2026-09-19', scored: [t], nowMin: 1260 }), 2);
+  const today = week[0].slots.filter((s) => s.taskId === 't1');
+  assert.ok(today.length > 0 && today.every((s) => s.missed), 'today’s blocks should read as missed');
+  // Tomorrow still sees all three hours.
+  const tomorrow = week[1].slots.filter((s) => s.taskId === 't1');
+  const minutes = tomorrow.reduce((a, s) => a + s.minutes, 0);
+  assert.ok(minutes >= 180, `only ${minutes} min carried to tomorrow`);
+});
+
+test('a ticked block still counts even once its time has passed', () => {
+  const t = task('t1', { estHours: 2, days: 2 });
+  const first = planDay(base({ date: '2026-09-19', scored: [t] })).slots[0];
+  const week = planWeek(
+    base({ date: '2026-09-19', scored: [t], nowMin: 1260, doneKeysFor: (d) => (d === '2026-09-19' ? new Set([first.key]) : new Set()) }),
+    2
+  );
+  assert.equal(week[0].slots[0].done, true);
+  assert.equal(week[0].slots[0].missed, false);
+  const tomorrow = week[1].slots.filter((s) => s.taskId === 't1').reduce((a, s) => a + s.minutes, 0);
+  assert.ok(tomorrow < 120, 'the worked block should come off what is left');
+});

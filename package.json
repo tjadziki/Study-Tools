@@ -3,13 +3,17 @@
   "version": "1.0.0",
   "private": true,
   "type": "module",
-  "description": "Term Command Deck \u2014 local study dashboard wired to real course materials",
+  "description": "Term Command Deck — local study dashboard wired to real course materials",
   "scripts": {
     "dev": "concurrently -n server,client -c cyan,magenta \"npm:dev:server\" \"npm:dev:client\"",
     "dev:server": "node --watch-path=server server/index.js",
     "dev:client": "vite --config client/vite.config.js",
     "build": "vite build --config client/vite.config.js",
-    "test": "node --test server/lib/*.test.js client/src/lib/*.test.js"
+    "test": "node --test server/lib/*.test.js client/src/lib/*.test.js",
+    "phone:build": "vite build --config client/vite.phone.config.js",
+    "phone:dev": "node phone/dev-server.js",
+    "phone:password": "node phone/set-password.mjs",
+    "phone:deploy": "node phone/deploy.mjs"
   },
   "dependencies": {
     "better-sqlite3": "^11.7.0",
@@ -19,13 +23,20 @@
     "pdfjs-dist": "^4.10.38"
   },
   "devDependencies": {
+    "@radix-ui/react-dialog": "^1.1.23",
+    "@radix-ui/react-slot": "^1.3.3",
     "@vitejs/plugin-react": "^4.3.4",
     "autoprefixer": "^10.4.20",
+    "class-variance-authority": "^0.7.1",
+    "clsx": "^2.1.1",
     "concurrently": "^9.1.2",
+    "lucide-react": "^1.47.0",
     "postcss": "^8.4.49",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
+    "tailwind-merge": "^2.6.1",
     "tailwindcss": "^3.4.17",
+    "tailwindcss-animate": "^1.0.7",
     "vite": "^6.0.7"
   }
 }

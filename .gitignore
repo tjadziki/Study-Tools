@@ -37,3 +37,9 @@ launcher/*.ico
 
 # Database backups taken before destructive changes. Local only.
 backups/
+
+# Phone app: local link to the deployment, dev store, Vercel metadata.
+phone.local.json
+phone/.dev-snapshot.json
+phone/.vercel/
+.vercel/

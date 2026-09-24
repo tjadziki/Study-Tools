@@ -307,6 +307,7 @@ export function planDay({
   staleConcepts = [],
   unknownCourses = [],
   spent = {},
+  pastBefore = null,
 }) {
   const num = (key, fallback) => {
     const v = Number(settings[key]);
@@ -424,13 +425,20 @@ export function planDay({
   const slots = raw.map(([s, e]) => {
     const minutes = e - s;
     const key = String(s);
+    const done = doneKeys.has(key);
+    // A block whose time has passed without being ticked was missed. It stays
+    // on the page, showing what it was for, but it did not happen — so it
+    // must not use up any of the task's estimate. That work moves forward
+    // into later blocks rather than quietly disappearing.
+    const missed = pastBefore != null && e <= pastBefore && !done;
     const base = {
       key,
       startMin: s,
       endMin: e,
       minutes,
       timeStr: `${hhmm(s)} – ${hhmm(e)}`,
-      done: doneKeys.has(key),
+      done,
+      missed,
       spare: planned >= targetMin,
     };
     planned += minutes;
@@ -459,9 +467,11 @@ export function planDay({
       : available(near) || available(unscoped);
 
     if (t) {
-      taken[t.id] = (taken[t.id] || 0) + 1;
       const workMin = Math.min(minutes, left(t));
-      budget[t.id] = (budget[t.id] || 0) + workMin;
+      if (!missed) {
+        taken[t.id] = (taken[t.id] || 0) + 1;
+        budget[t.id] = (budget[t.id] || 0) + workMin;
+      }
       const isExam = t.kind === 'exam';
       return {
         ...base,
@@ -503,8 +513,10 @@ export function planDay({
     // leave the block empty.
     const ahead = available(far);
     if (ahead) {
-      taken[ahead.id] = (taken[ahead.id] || 0) + 1;
-      budget[ahead.id] = (budget[ahead.id] || 0) + Math.min(minutes, left(ahead));
+      if (!missed) {
+        taken[ahead.id] = (taken[ahead.id] || 0) + 1;
+        budget[ahead.id] = (budget[ahead.id] || 0) + Math.min(minutes, left(ahead));
+      }
       return {
         ...base,
         tag: 'deliverable',
@@ -558,8 +570,14 @@ export function planWeek(args, days = 7) {
     const day = planDay({
       ...args,
       date,
+      // Each simulated day sees its deadlines from where *it* stands. With a
+      // fixed pool, a task due Oct 29 would still look 36 days away on
+      // Oct 22 — harmless across a week, badly wrong across a term.
+      scored: args.poolFor ? args.poolFor(date) : args.scored,
       spent,
       doneKeys: args.doneKeysFor ? args.doneKeysFor(date) : new Set(),
+      // Only today has a past.
+      pastBefore: i === 0 ? args.nowMin ?? null : null,
     });
     spent = day.spent;
     out.push(day);

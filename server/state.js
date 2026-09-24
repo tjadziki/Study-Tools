@@ -57,6 +57,19 @@ export function buildState() {
     FROM planLog WHERE date >= date('now', '-21 days') ORDER BY date, slotKey
   `).all();
 
+  // All-time hours worked per task, split at today. The planner takes work
+  // done before today off each estimate; the forecast counts all of it.
+  const localToday = (() => {
+    const n = new Date();
+    return `${n.getFullYear()}-${String(n.getMonth() + 1).padStart(2, '0')}-${String(n.getDate()).padStart(2, '0')}`;
+  })();
+  const taskWork = db.prepare(`
+    SELECT taskId,
+           SUM(CASE WHEN date < ? THEN minutes ELSE 0 END) AS before,
+           SUM(minutes) AS total
+    FROM planLog WHERE taskId IS NOT NULL GROUP BY taskId
+  `).all(localToday);
+
   // What to actually open. The scanner already knows every file it parsed, so
   // the planner can name a real document rather than saying "study ME 524".
   const materials = db.prepare(`
@@ -99,6 +112,7 @@ export function buildState() {
     conflicts,
     classBlocks,
     planLog,
+    taskWork,
     materials,
     settings: getSettings(),
     meta: {

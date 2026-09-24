@@ -72,6 +72,7 @@ the ports with `DECK_PORT` / `DECK_CLIENT_PORT`.
 | `POST /api/term-weeks` | Save / confirm the term calendar |
 | `POST /api/plan` | Tick a study block off (or untick it) |
 | `POST /api/class-blocks` | Replace the weekly timetable |
+| `POST /api/phone-sync` | Push to the phone app now |
 | `POST /api/settings` | Slip days and the scoring rules |
 | `POST /api/reset` | Reseed the term (keeps the file-hash ledger) |
 
@@ -135,6 +136,76 @@ so it is a plan rather than the same list seven times.
 Timetable and study window are editable in Config. `npm test` covers the
 planner (45 tests) alongside the date extractor.
 
+## Outlook: exam readiness and busy weeks
+
+The daily plan only ever looks at today. **Outlook** looks at the term.
+
+**Exam readiness** walks the plan forward day by day — with each simulated
+day seeing its deadlines from where *it* stands — and counts the prep every
+exam actually gets before its date: dedicated exam blocks, plus that course's
+retrieval practice, against the estimate minus hours already worked. Each
+exam is *on track* (fits inside your daily target), *tight* (only fits if you
+work the beyond-target blocks), or *short* (does not fit at all — start now).
+Two exams on the same day compete for the same blocks, as they will in fact.
+
+**Busy weeks** adds up the hours still left on everything due in each
+Monday–Sunday week and sets them against the hours you study in a week.
+Heavy and busy weeks get a start-by date, scheduled *backwards* from each
+item's own deadline, so a Monday deadline inside the week pulls the start
+earlier instead of being counted from Sunday. A confirmed deadline after the
+exam period is flagged as a probable slip.
+
+Blocks you let pass without ticking are *missed*: they stay on the page but
+do not use up any estimate, so that work moves forward instead of vanishing.
+
+## The iPhone app
+
+A read-only view of the deck — Today, Triage and Outlook — deployed on
+Vercel, behind a username and password. Dates still go in on the laptop.
+
+```
+laptop (source of truth) ──sync──▶ Vercel Blob (private) ◀──read── iPhone
+```
+
+- **It is the same code.** `client/phone/` is a second entry point that
+  imports the laptop's own ranking and planning (`client/src/lib`) and its
+  screens in read-only mode. The phone cannot rank or plan differently, and
+  it plans from its own clock, so "right now" is right even if the laptop
+  last synced yesterday.
+- **Sync is one-way and opt-in.** With no `phone.local.json` it never
+  happens and nothing leaves the machine. With it, every change is pushed a
+  few seconds later, and an unchanged deck is never re-uploaded.
+- **What leaves the laptop is an allowlist** (`server/phoneSync.js`):
+  course codes, task titles, weights, estimates, *confirmed* dates, the
+  timetable, the planner settings, which blocks were ticked, how many
+  error-log entries each course has, and course file *names*. Never sent:
+  source snippets and file paths, the text of error-log entries and weekly
+  reflections, escalation contacts, unconfirmed dates, the review queue.
+- **Sign-in**: one user, password hashed with scrypt, a signed HttpOnly
+  cookie for 60 days, best-effort throttling on failures. Set it with
+  `npm run phone:password` — you type the password; only its hash leaves
+  your machine.
+
+```bash
+npm run phone:deploy      # build locally, ship a prebuilt deployment
+npm run phone:password    # set or change the sign-in (then redeploys)
+npm run phone:build       # build only
+npm run phone:dev         # run it locally against a file store
+```
+
+## Design
+
+The interface follows iOS 16: the system palette in light and dark
+(following the OS), inset grouped lists, capsule badges, a segmented control,
+round checkmarks, filled text fields, translucent bars, and the iOS type
+scale. Components are [shadcn/ui](https://ui.shadcn.com) — copied in, not
+installed, in `client/src/components/ui/` — on Radix primitives and
+Tailwind, restyled to iOS. `components.json` lets the shadcn CLI add more.
+
+The busy-weeks chart's status colours are checked with a palette validator
+against the card surface in each theme; the dark-mode orange and red are
+stepped down from iOS's own, which fail the dark lightness band.
+
 ## Scanning
 
 `Rescan` (or `R`) walks every course folder, SHA-256s each file, and re-parses
@@ -176,7 +247,7 @@ A schedule row naming two dates — `Original Posts … Reply Post …`, or
 `Opens … Closes …` — collapses to the later one, because that is when the
 deliverable is actually finished.
 
-Run the tests with `npm test` (94: 49 over extraction and matching, 45 over the planner).
+Run the tests with `npm test` (136).
 
 ## Build status
 
@@ -187,3 +258,5 @@ Run the tests with `npm test` (94: 49 over extraction and matching, 45 over the 
 5. ✅ Editable term calendar; week-relative resolution
 6. ✅ Confirmed dates into triage; conflict detection
 7. ✅ Daily planner: timetable, study window, Today view, week strip
+8. ✅ Outlook: exam readiness forecast and busy-week detector
+9. ✅ iPhone app on Vercel with sign-in; iOS 16 redesign on shadcn/ui

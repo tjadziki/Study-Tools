@@ -6,6 +6,19 @@
 
 import { d, iso, today, fmt, fmtShort, daysTo, shift, fridays, hm } from './dates.js';
 import { planWeek, rankTasks, rankOptions, TIER, TIER_LABEL } from './plan.js';
+import { examForecast, busyWeeks, daysBetween } from './forecast.js';
+
+// The term-long plan simulation behind the forecast is the one expensive thing
+// derive() does, and derive() runs once a second off the clock. Cache it per
+// state object (a mutation always produces a new one) and per calendar day.
+const SIM_CACHE = new WeakMap();
+function cached(state, key, compute) {
+  const hit = SIM_CACHE.get(state);
+  if (hit && hit.key === key) return hit.value;
+  const value = compute();
+  SIM_CACHE.set(state, { key, value });
+  return value;
+}
 
 /* ── the triage priority score ──────────────────────────────────────────────
    (weight/estHours x 10) + (1/max(daysUntilDue,1) x 30) + (droppable ? -5 : 0)
@@ -168,11 +181,7 @@ export function derive(state, now) {
     unconfirmed: !!t.dueDate && !t.userConfirmed,
     note: t.note || '',
     hasNote: !!t.note,
-    barStyle: {
-      width: `${Math.max(4, Math.round((t.priority / maxP) * 100))}%`,
-      height: '100%',
-      background: 'var(--sig)',
-    },
+    barPct: Math.max(4, Math.round((t.priority / maxP) * 100)),
   });
 
   const rows = scored.map(vm);
@@ -195,7 +204,7 @@ export function derive(state, now) {
       pct: p,
       total,
       label: total ? `${pct(p)} banked` : 'no weights entered',
-      barStyle: { width: pct(p), height: '100%', background: 'var(--color-accent)' },
+      pctNum: Math.round(p * 100),
     };
   });
   const withWeights = stake.filter((s) => s.total > 0);
@@ -489,9 +498,38 @@ export function derive(state, now) {
 
   const errorCounts = Object.fromEntries(courses.map((c) => [c.id, errorsFor(c.id).length]));
 
+  // What the plan would see on any given day: deadlines measured from that
+  // day, exams admitted at their own T-horizon, and anything due before a
+  // future day assumed handed in by then.
+  const todayIso = iso(tdy);
+  const poolFor = (dateIso) => {
+    const at = d(dateIso).getTime();
+    const future = dateIso > todayIso;
+    return open
+      .filter((t) => !(future && t.dueDate && t.dueDate < dateIso))
+      .filter((t) => t.kind !== 'exam' || (t.dueDate != null && daysTo(t.dueDate, at) <= horizon))
+      .map((t) => ({ ...t, ...score(t, at) }));
+  };
+
+  // Hours already worked, from the plan log. Work from before today is taken
+  // off each task's estimate so the plan does not schedule it twice; today's
+  // ticks are left out because today's blocks are still on the plan.
+  const spentBefore = {};
+  const workedByTask = {};
+  for (const w of state.taskWork || []) {
+    spentBefore[w.taskId] = w.before;
+    workedByTask[w.taskId] = w.total;
+  }
+
+  const nowDate = new Date(now);
+  const nowMin = nowDate.getHours() * 60 + nowDate.getMinutes();
+
   const planArgs = {
-    date: iso(tdy),
+    date: todayIso,
+    nowMin,
     scored,
+    poolFor,
+    spent: spentBefore,
     classBlocks: state.classBlocks || [],
     settings,
     materialsByCourse,
@@ -510,7 +548,40 @@ export function derive(state, now) {
       .filter((t) => t.dueDate === dateIso)
       .map((t) => ({ course: code(t.courseId), title: t.title, weightStr: weightStr(t.weight) }));
 
-  const weekPlan = planWeek(planArgs, 7).map((day, i) => {
+  // One simulation serves both the week strip and the exam forecast: from
+  // today to the day after the last dated exam (at least a week, at most a
+  // term).
+  const openExams = open.filter((t) => t.kind === 'exam');
+  const lastExam = openExams.reduce((m, t) => (t.dueDate && t.dueDate > m ? t.dueDate : m), todayIso);
+  const simDays = Math.min(120, Math.max(7, daysBetween(todayIso, lastExam) + 1));
+  // Missed blocks change the plan as the day goes on, so the cache turns over
+  // every quarter hour — often enough to notice, rarely enough to be free.
+  const simulation = cached(state, `${todayIso}|${simDays}|${Math.floor(nowMin / 15)}`, () =>
+    planWeek(planArgs, simDays)
+  );
+
+  const forecast = examForecast({
+    exams: openExams.map((t) => ({ ...t, course: code(t.courseId) })),
+    planDays: simulation,
+    workedByTask,
+    todayIso,
+    errorCounts,
+    minErr,
+  });
+
+  const outlook = busyWeeks({
+    tasks: components
+      .filter((t) => t.status === 'todo')
+      .map((t) => ({ ...t, course: code(t.courseId) })),
+    todayIso,
+    endIso: termEnd,
+    workedByTask,
+    dailyTargetH: Number(settings.dailyTargetHours ?? 4),
+    weekendTargetH: Number(settings.weekendTargetHours ?? 4),
+    hoursPerDay: rankOptions(settings).hoursPerDay,
+  });
+
+  const weekPlan = simulation.slice(0, 7).map((day, i) => {
     const dt = d(day.date);
     return {
       ...day,
@@ -537,7 +608,9 @@ export function derive(state, now) {
       errorTotalStr: String(errors.length),
       practiceStreakStr: `${streak}w`,
       reviewStreakStr: `${rStreak}w`,
-      termBarStyle: { width: `${termPct}%`, height: '100%', background: 'var(--color-accent)' },
+      termPct,
+      weekNo,
+      lectureWeeks,
       termLabel: `FALL 2026 · 4A MECHANICAL · ${fmtShort(termStart).toUpperCase()} — ${fmtShort(termEnd).toUpperCase()}`,
       openConceptCount: openConcepts.length,
     },
@@ -581,6 +654,8 @@ export function derive(state, now) {
     ),
     today: todayPlan,
     weekPlan,
+    forecast,
+    outlook,
     classBlocks: state.classBlocks || [],
     materialsByCourse,
     candidates,

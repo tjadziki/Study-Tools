@@ -1,0 +1,15 @@
+{
+  "name": "term-deck-phone",
+  "private": true,
+  "type": "module",
+  "description": "The read-only iPhone view of the Term Command Deck, deployed to Vercel.",
+  "scripts": {
+    "build": "node ../node_modules/vite/bin/vite.js build --config ../client/vite.phone.config.js"
+  },
+  "dependencies": {
+    "@vercel/blob": "^2.8.0"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

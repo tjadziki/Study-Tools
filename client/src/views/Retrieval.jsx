@@ -1,93 +1,51 @@
 import React from 'react';
-
-const mono = (size, extra = {}) => ({ fontFamily: 'var(--font-mono)', fontSize: size, ...extra });
-const kicker = { ...mono(9), letterSpacing: '.16em', color: 'rgba(238,243,248,.45)' };
+import { PenLine, Trash2 } from 'lucide-react';
+import { cn } from '@/lib/utils';
+import { Button } from '@/components/ui/button';
+import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/components/ui/card';
+import { CheckCircle, Stat, Kbd } from '@/components/ui/misc';
+import { ListSection, ListRow } from '@/components/ui/list';
+import { Segmented } from '@/components/ui/segmented';
 
 export default function Retrieval({ deck, actions, bankCourseId, onOpenError }) {
   const { fridayRows, bankRows, examCourses } = deck;
-  const bank = deck.bankFor(bankCourseId);
+  const bank = bankCourseId ? deck.bankFor(bankCourseId) : { topicGroups: [], counterStr: '' };
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
-      <div style={{ display: 'flex', gap: 20, flexWrap: 'wrap', alignItems: 'flex-start' }}>
-        {/* ── practice grid ─────────────────────────────────────────────── */}
-        <div style={{ flex: '1 1 420px', minWidth: 0, display: 'flex', flexDirection: 'column', gap: 12 }}>
-          <div style={{ display: 'flex', alignItems: 'baseline', gap: 12, flexWrap: 'wrap' }}>
-            <h6 style={{ margin: 0, color: 'var(--color-accent)', whiteSpace: 'nowrap' }}>
-              Friday practice blocks
-            </h6>
-            <span style={{ fontSize: 12, color: 'rgba(238,243,248,.5)' }}>
-              90 minutes per exam course, closed book
-            </span>
-          </div>
-          <div style={{ display: 'flex', gap: 14, flexWrap: 'wrap' }}>
-            <div>
-              <div style={kicker}>STREAK</div>
-              <div style={mono(26, { lineHeight: 1.1 })}>{deck.header.practiceStreakStr}</div>
-            </div>
-            <div>
-              <div style={kicker}>BLOCKS LOGGED</div>
-              <div style={mono(26, { lineHeight: 1.1 })}>{deck.blocksLoggedStr}</div>
-            </div>
-            <div>
-              <div style={kicker}>ERRORS BANKED</div>
-              <div style={mono(26, { lineHeight: 1.1, color: 'var(--color-accent)' })}>
-                {deck.header.errorTotalStr}
-              </div>
-            </div>
-          </div>
-          <div style={{ overflowX: 'auto' }}>
-            <table className="table" style={{ minWidth: 420 }}>
+    <div className="grid items-start gap-8 xl:grid-cols-2">
+      {/* ── practice grid ─────────────────────────────────────────────── */}
+      <div className="flex min-w-0 flex-col gap-5">
+        <div className="grid grid-cols-3 gap-3">
+          <Card className="p-4"><Stat label="Streak" value={deck.header.practiceStreakStr} /></Card>
+          <Card className="p-4"><Stat label="Blocks logged" value={deck.blocksLoggedStr} /></Card>
+          <Card className="p-4"><Stat label="Errors banked" value={deck.header.errorTotalStr} tone="blue" /></Card>
+        </div>
+
+        <ListSection header="Friday practice blocks" footer="90 minutes per exam course, closed book. Reading does not count.">
+          <div className="overflow-x-auto">
+            <table className="w-full min-w-[360px] text-left">
               <thead>
-                <tr>
-                  <th style={{ width: 90 }}>Friday</th>
+                <tr className="text-caption uppercase tracking-wide text-muted-foreground">
+                  <th className="py-2.5 pl-4 pr-3 font-medium">Friday</th>
                   {examCourses.map((c) => (
-                    <th key={c.id}>{c.code}</th>
+                    <th key={c.id} className="px-2 py-2.5 text-center font-medium">{c.code}</th>
                   ))}
                 </tr>
               </thead>
               <tbody>
                 {fridayRows.map((f) => (
-                  <tr key={f.date}>
-                    <td style={mono(11.5, { color: 'rgba(238,243,248,.6)' })}>{f.label}</td>
+                  <tr key={f.date} className="border-t border-border">
+                    <td className="py-2 pl-4 pr-3 text-footnote text-muted-foreground tabular">{f.label}</td>
                     {f.cells.map((cell) => (
-                      <td key={cell.courseId}>
-                        <button
-                          onClick={() => actions.toggleBlock(cell.date, cell.courseId)}
-                          style={{
-                            appearance: 'none',
-                            background: 'transparent',
-                            border: 0,
-                            padding: 2,
-                            cursor: 'pointer',
-                            color: 'var(--color-text)',
-                          }}
-                        >
-                          {cell.done ? (
-                            <span
-                              style={{
-                                ...mono(12),
-                                width: 17,
-                                height: 17,
-                                display: 'grid',
-                                placeItems: 'center',
-                                background: 'var(--color-accent)',
-                                color: '#151f29',
-                              }}
-                            >
-                              ✓
-                            </span>
-                          ) : (
-                            <span
-                              style={{
-                                width: 17,
-                                height: 17,
-                                display: 'block',
-                                border: '1px solid rgba(238,243,248,.3)',
-                              }}
-                            />
-                          )}
-                        </button>
+                      <td key={cell.courseId} className="px-2 py-1.5">
+                        <div className="grid place-items-center">
+                          <CheckCircle
+                            checked={cell.done}
+                            size="sm"
+                            label={`${deck.code(cell.courseId)} practice, ${f.label}`}
+                            onClick={() => actions.toggleBlock(cell.date, cell.courseId)}
+                          />
+                        </div>
                       </td>
                     ))}
                   </tr>
@@ -95,124 +53,84 @@ export default function Retrieval({ deck, actions, bankCourseId, onOpenError }) 
               </tbody>
             </table>
           </div>
+        </ListSection>
+      </div>
+
+      {/* ── error log ─────────────────────────────────────────────────── */}
+      <div className="flex min-w-0 flex-col gap-5">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          {bankRows.length > 1 && (
+            <Segmented
+              ariaLabel="Course"
+              value={bankCourseId}
+              onChange={(id) => actions.setBankCourseId(id)}
+              options={bankRows.map((b) => ({ value: b.id, label: b.course }))}
+            />
+          )}
+          <Button onClick={onOpenError}>
+            <PenLine />
+            Log an error
+            <Kbd className="border-white/30 bg-white/15 text-white shadow-none">E</Kbd>
+          </Button>
         </div>
 
-        {/* ── error log ─────────────────────────────────────────────────── */}
-        <div style={{ flex: '1 1 400px', minWidth: 0, display: 'flex', flexDirection: 'column', gap: 12 }}>
-          <div style={{ display: 'flex', alignItems: 'baseline', gap: 12, flexWrap: 'wrap' }}>
-            <h6 style={{ margin: 0, color: 'var(--color-accent)', whiteSpace: 'nowrap' }}>Error log</h6>
-            <span style={{ fontSize: 12, color: 'rgba(238,243,248,.5)' }}>the reason, not the question number</span>
-            <button
-              className="btn btn-primary"
-              onClick={onOpenError}
-              style={{ fontSize: 12, marginLeft: 'auto', gap: 8, whiteSpace: 'nowrap' }}
-            >
-              Log an error{' '}
-              <span style={{ ...mono(10), border: '1px solid rgba(21,31,41,.35)', padding: '0 4px' }}>E</span>
-            </button>
-          </div>
-
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-            {bankRows.map((bk) => (
-              <button
-                key={bk.id}
-                onClick={() => actions.setBankCourseId(bk.id)}
-                style={{
-                  appearance: 'none',
-                  border: '1px solid var(--color-divider)',
-                  background: 'transparent',
-                  color: 'var(--color-text)',
-                  padding: '10px 12px',
-                  cursor: 'pointer',
-                  textAlign: 'left',
-                  font: 'inherit',
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: 12,
-                }}
-              >
-                {bankCourseId === bk.id && (
-                  <span style={{ width: 3, alignSelf: 'stretch', background: 'var(--color-accent)', flex: 'none' }} />
-                )}
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ ...mono(11.5), letterSpacing: '.09em', color: 'var(--color-accent)', whiteSpace: 'nowrap' }}>
-                    {bk.course}
-                  </div>
-                  <div style={{ ...mono(12), color: 'rgba(238,243,248,.65)', marginTop: 2 }}>{bk.summary}</div>
-                </div>
-                <div style={{ textAlign: 'right', flex: 'none' }}>
-                  <div style={mono(20, { lineHeight: 1.1 })}>{bk.countStr}</div>
-                  <div style={mono(10, { color: 'rgba(238,243,248,.45)' })}>{bk.readyStr}</div>
-                </div>
-              </button>
-            ))}
-          </div>
-
-          <div className="blueprint" style={{ padding: '16px 18px', marginTop: 4 }}>
-            <i className="corner tl" />
-            <i className="corner tr" />
-            <i className="corner bl" />
-            <i className="corner br" />
-            <div
-              style={{
-                display: 'flex',
-                justifyContent: 'space-between',
-                alignItems: 'baseline',
-                gap: 12,
-                flexWrap: 'wrap',
-              }}
-            >
-              <div>
-                <div style={{ ...mono(9.5), letterSpacing: '.15em', color: 'var(--color-accent)' }}>
-                  EXAM REVIEW ARTEFACT
-                </div>
-                <div style={{ fontFamily: 'var(--font-heading)', fontWeight: 600, fontSize: 23, marginTop: 3 }}>
-                  {deck.code(bankCourseId)} error log
-                </div>
+        <ListSection header="Error bank" footer="The reason, not the question number.">
+          {bankRows.map((bk) => (
+            <ListRow key={bk.id} onClick={() => actions.setBankCourseId(bk.id)} className={cn(bankCourseId === bk.id && 'bg-primary/5')}>
+              <div className="min-w-0 flex-1">
+                <div className={cn('text-subhead font-semibold', bankCourseId === bk.id ? 'text-tint-blue' : '')}>{bk.course}</div>
+                <div className="text-footnote text-muted-foreground">{bk.summary}</div>
               </div>
-              <div style={{ ...mono(12.5), color: 'rgba(238,243,248,.7)', textAlign: 'right' }}>
-                {bank.counterStr}
+              <div className="text-right">
+                <div className="font-display text-title-3 font-semibold tabular">{bk.countStr}</div>
+                <div className="text-caption text-muted-foreground">{bk.readyStr}</div>
               </div>
-            </div>
+            </ListRow>
+          ))}
+        </ListSection>
 
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 12, marginTop: 14 }}>
+        {bankCourseId && (
+          <Card>
+            <CardHeader>
+              <CardDescription className="font-medium uppercase tracking-wide">Read this the night before</CardDescription>
+              <CardTitle className="text-title-2">{deck.code(bankCourseId)} error log</CardTitle>
+              <CardDescription>{bank.counterStr}</CardDescription>
+            </CardHeader>
+            <CardContent className="flex flex-col gap-5">
               {bank.topicGroups.map((g) => (
-                <div key={g.topic} style={{ borderTop: '1px solid rgba(238,243,248,.12)', paddingTop: 9 }}>
-                  <div style={{ display: 'flex', alignItems: 'baseline', gap: 9 }}>
-                    <span style={mono(12, { color: 'var(--sig)' })}>×{g.countStr}</span>
-                    <span style={{ fontFamily: 'var(--font-heading)', fontWeight: 600, fontSize: 17 }}>{g.topic}</span>
+                <div key={g.topic}>
+                  <div className="flex items-baseline gap-2">
+                    <span className="rounded-full bg-ios-orange/15 px-2 text-caption font-semibold text-tint-orange tabular">×{g.countStr}</span>
+                    <span className="text-headline font-semibold">{g.topic}</span>
                   </div>
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: 5, marginTop: 6 }}>
+                  <div className="mt-2 flex flex-col">
                     {g.entries.map((en) => (
-                      <div key={en.id} style={{ display: 'flex', gap: 10, alignItems: 'flex-start' }}>
-                        <span style={{ ...mono(10.5), color: 'rgba(238,243,248,.35)', flex: 'none', paddingTop: 2 }}>
-                          {en.dateStr}
-                        </span>
-                        <span style={{ fontSize: 13, lineHeight: 1.4, flex: 1, minWidth: 0, textWrap: 'pretty' }}>
-                          {en.what}
-                        </span>
-                        <button
-                          className="btn btn-ghost"
+                      <div key={en.id} className="group flex items-start gap-3 border-t border-border py-2 first:border-t-0">
+                        <span className="w-12 shrink-0 pt-0.5 text-caption text-muted-foreground tabular">{en.dateStr}</span>
+                        <span className="min-w-0 flex-1 text-subhead text-pretty">{en.what}</span>
+                        <Button
+                          variant="ghost"
+                          size="icon-sm"
+                          aria-label="Delete entry"
+                          className="text-muted-foreground opacity-0 transition-opacity focus-visible:opacity-100 group-hover:opacity-100"
                           onClick={() => actions.deleteError(en.id)}
-                          style={{ fontSize: 10.5, padding: '0 3px', flex: 'none' }}
                         >
-                          del
-                        </button>
+                          <Trash2 />
+                        </Button>
                       </div>
                     ))}
                   </div>
                 </div>
               ))}
-            </div>
-
-            {bank.topicGroups.length === 0 && (
-              <div style={{ fontSize: 13, color: 'rgba(238,243,248,.5)', marginTop: 12 }}>
-                Nothing banked for {deck.code(bankCourseId)} yet. This panel is what you read the night before the
-                exam — if it is empty then, the exam is a first encounter.
-              </div>
-            )}
-          </div>
-        </div>
+              {bank.topicGroups.length === 0 && (
+                <p className="text-subhead text-muted-foreground text-pretty">
+                  Nothing banked for {deck.code(bankCourseId)} yet. This is what you read the night before the exam — if
+                  it is empty then, the exam is a first encounter.
+                </p>
+              )}
+            </CardContent>
+          </Card>
+        )}
       </div>
     </div>
   );

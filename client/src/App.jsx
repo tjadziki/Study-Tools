@@ -1,10 +1,28 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import {
+  Sun,
+  ListOrdered,
+  Telescope,
+  Inbox,
+  Brain,
+  GraduationCap,
+  NotebookPen,
+  CalendarDays,
+  SlidersHorizontal,
+  RefreshCw,
+  LifeBuoy,
+  Smartphone,
+} from 'lucide-react';
 import { api } from './api.js';
 import { derive } from './lib/deck.js';
 import { nowIsoDate, fmtShort } from './lib/dates.js';
 import { runScan } from './lib/scanClient.js';
+import { cn } from '@/lib/utils';
+import { Button } from '@/components/ui/button';
+import { Progress, Kbd } from '@/components/ui/misc';
 import Today from './views/Today.jsx';
 import Triage from './views/Triage.jsx';
+import Outlook from './views/Outlook.jsx';
 import Retrieval from './views/Retrieval.jsx';
 import Exams from './views/Exams.jsx';
 import WeeklyReview from './views/WeeklyReview.jsx';
@@ -16,21 +34,19 @@ import ErrorDialog from './components/ErrorDialog.jsx';
 import ReviewDialog from './components/ReviewDialog.jsx';
 import ResetDialog from './components/ResetDialog.jsx';
 
-const VIEWS = ['today', 'triage', 'queue', 'retrieval', 'exams', 'review', 'calendar', 'config'];
-const VIEW_LABELS = {
-  today: 'Today',
-  triage: 'Triage',
-  queue: 'Review queue',
-  retrieval: 'Retrieval bank',
-  exams: 'Exam taper',
-  review: 'Sunday review',
-  calendar: 'Term calendar',
-  config: 'Config',
-};
-
-const mono = (size, extra = {}) => ({ fontFamily: 'var(--font-mono)', fontSize: size, ...extra });
-const kicker = { ...mono(9), letterSpacing: '.16em', color: 'rgba(238,243,248,.45)' };
-const stat = { ...mono(18), lineHeight: 1.15 };
+// Order is the keyboard order: 1–9.
+const VIEWS = [
+  { id: 'today', label: 'Today', icon: Sun, subtitle: 'Your study window, minus your classes, filled from the triage ranking.' },
+  { id: 'triage', label: 'Triage', icon: ListOrdered, subtitle: 'Everything open, most urgent first.' },
+  { id: 'outlook', label: 'Outlook', icon: Telescope, subtitle: 'Whether each exam gets enough prep, and which weeks will be crushed.' },
+  { id: 'queue', label: 'Review queue', icon: Inbox, subtitle: 'Scanned dates wait here until you confirm them. Nothing unconfirmed reaches your plan.' },
+  { id: 'retrieval', label: 'Retrieval', icon: Brain, subtitle: 'Practice blocks and the error log — the material every exam taper is built from.' },
+  { id: 'exams', label: 'Exam taper', icon: GraduationCap, subtitle: 'Back-planned from each confirmed exam date.' },
+  { id: 'review', label: 'Sunday review', icon: NotebookPen, subtitle: 'Twenty minutes a week. The habit that holds the rest together.' },
+  { id: 'calendar', label: 'Term calendar', icon: CalendarDays, subtitle: 'Week numbers to dates. Every “Friday of Week 5” resolves against this.' },
+  { id: 'config', label: 'Config', icon: SlidersHorizontal, subtitle: 'Weights, estimates, dates, your timetable and study window.' },
+];
+const VIEW_BY_ID = Object.fromEntries(VIEWS.map((v) => [v.id, v]));
 
 export default function App() {
   const [state, setState] = useState(null);
@@ -40,20 +56,20 @@ export default function App() {
   const [view, setView] = useState('today');
 
   const [stuck, setStuck] = useState(null);
-  const [stuckDraft, setStuckDraft] = useState({ courseId: 'me524', text: '' });
+  const [stuckDraft, setStuckDraft] = useState({ courseId: 'mse331', text: '' });
   const [errorForm, setErrorForm] = useState(null);
   const [reviewStep, setReviewStep] = useState(-1);
   const [reflectionDraft, setReflectionDraft] = useState('');
   const [showDone, setShowDone] = useState(false);
-  const [bankCourseId, setBankCourseId] = useState('me524');
+  const [bankCourseId, setBankCourseId] = useState(null);
   const [resetOpen, setResetOpen] = useState(false);
   const [scan, setScan] = useState(null);
 
   const toastTimer = useRef(null);
   const flash = useCallback((message, tone = 'info') => {
-    setToast({ message, tone });
+    setToast({ message, tone, key: Date.now() });
     clearTimeout(toastTimer.current);
-    toastTimer.current = setTimeout(() => setToast(null), 5200);
+    toastTimer.current = setTimeout(() => setToast(null), 4200);
   }, []);
 
   /* ── load + tick ────────────────────────────────────────────────────── */
@@ -86,6 +102,12 @@ export default function App() {
   );
 
   const deck = useMemo(() => (state ? derive(state, now) : null), [state, now]);
+
+  // The error bank defaults to the first exam course rather than a hardcoded
+  // one, so a change of courses cannot leave it pointing at nothing.
+  const bankId = bankCourseId && deck?.examCourses.some((c) => c.id === bankCourseId)
+    ? bankCourseId
+    : deck?.examCourses[0]?.id || null;
 
   /* ── actions ────────────────────────────────────────────────────────── */
   const actions = useMemo(
@@ -128,27 +150,30 @@ export default function App() {
         setStuck({ phase: 'draft' });
       },
       openErrorFor: (courseId) => {
-        const target = deck?.examCourses.some((c) => c.id === courseId) ? courseId : bankCourseId;
+        const target = deck?.examCourses.some((c) => c.id === courseId) ? courseId : bankId;
         setErrorForm({ courseId: target, topic: '', what: '' });
       },
       setBankCourseId,
     }),
-    [run, deck, bankCourseId]
+    [run, deck, bankId]
   );
 
   /* ── stuck timer ────────────────────────────────────────────────────── */
   const openStuck = useCallback(() => {
     if (stuck) return;
-    const liveOne = deck?.conceptList.find((c) => c.id === stuck?.conceptId);
-    if (liveOne) return;
     setStuck({ phase: 'draft' });
-  }, [stuck, deck]);
+  }, [stuck]);
 
   const startStuck = useCallback(async () => {
     const mins = Number(state?.settings?.stuckMinutes ?? 25);
+    // A draft can name a course that has since been dropped; fall back to the
+    // first course the deck still has, which is also what the dialog shows.
+    const courseId = deck?.courses.some((c) => c.id === stuckDraft.courseId)
+      ? stuckDraft.courseId
+      : deck?.courses[0]?.id;
     const payload = await run(() =>
       api.addConcept({
-        courseId: stuckDraft.courseId,
+        courseId,
         description: stuckDraft.text.trim(),
         fromStuckTimer: true,
       })
@@ -156,7 +181,7 @@ export default function App() {
     if (payload?.id) {
       setStuck({ phase: 'run', conceptId: payload.id, endsAt: Date.now() + mins * 60000 });
     }
-  }, [run, state, stuckDraft]);
+  }, [run, state, stuckDraft, deck]);
 
   /* ── rescan ─────────────────────────────────────────────────────────── */
   const doScan = useCallback(async () => {
@@ -206,23 +231,17 @@ export default function App() {
     const onKey = (e) => {
       const t = e.target || {};
       const tag = String(t.tagName || '').toLowerCase();
-      const typing =
-        tag === 'input' || tag === 'textarea' || tag === 'select' || t.isContentEditable;
-      if (e.key === 'Escape') {
-        setStuck(null);
-        setErrorForm(null);
-        setReviewStep(-1);
-        setResetOpen(false);
-        return;
-      }
+      const typing = tag === 'input' || tag === 'textarea' || tag === 'select' || t.isContentEditable;
       if (typing || e.metaKey || e.ctrlKey || e.altKey) return;
+      // Dialogs own the keyboard while they are open.
+      if (stuck || errorForm || reviewStep >= 0 || resetOpen) return;
       const k = e.key.toLowerCase();
       if (k === 's') {
         e.preventDefault();
         openStuck();
       } else if (k === 'e') {
         e.preventDefault();
-        setErrorForm({ courseId: bankCourseId, topic: '', what: '' });
+        setErrorForm({ courseId: bankId, topic: '', what: '' });
       } else if (k === 'w') {
         e.preventDefault();
         setView('review');
@@ -230,374 +249,249 @@ export default function App() {
       } else if (k === 'r') {
         e.preventDefault();
         doScan();
-      } else if ('12345678'.includes(e.key)) {
-        setView(VIEWS[Number(e.key) - 1]);
+      } else if (/^[1-9]$/.test(e.key)) {
+        setView(VIEWS[Number(e.key) - 1].id);
       }
     };
     document.addEventListener('keydown', onKey);
     return () => document.removeEventListener('keydown', onKey);
-  }, [openStuck, bankCourseId, doScan]);
+  }, [openStuck, bankId, doScan, stuck, errorForm, reviewStep, resetOpen]);
 
   /* ── render ─────────────────────────────────────────────────────────── */
   if (fatal) {
     return (
-      <div style={{ padding: 40, fontFamily: 'var(--font-mono)', fontSize: 13, color: 'var(--sig)' }}>
-        <div style={{ letterSpacing: '.12em', marginBottom: 10 }}>DECK SERVER UNREACHABLE</div>
-        <div style={{ color: 'rgba(238,243,248,.7)', lineHeight: 1.6 }}>
-          {fatal}
-          <br />
-          <br />
-          Start it with <span style={{ color: 'var(--color-accent)' }}>npm run dev</span> from the
-          StudyHub folder.
+      <div className="grid min-h-screen place-items-center p-6">
+        <div className="max-w-md rounded-3xl bg-card p-8 text-center">
+          <div className="mx-auto mb-4 grid size-12 place-items-center rounded-full bg-ios-orange/15 text-tint-orange">
+            <RefreshCw className="size-6" />
+          </div>
+          <h1 className="text-title-3 font-semibold">The deck server isn’t running</h1>
+          <p className="mt-2 text-subhead text-muted-foreground">{fatal}</p>
+          <p className="mt-4 text-subhead text-muted-foreground">
+            Open it from the <b className="text-foreground">Term Command Deck</b> shortcut on your desktop, or run{' '}
+            <code className="rounded-md bg-secondary px-1.5 py-0.5 font-mono text-footnote">npm run dev</code> in the
+            StudyHub folder.
+          </p>
         </div>
       </div>
     );
   }
 
   const h = deck?.header;
+  const meta = VIEW_BY_ID[view];
+  const queueCount = deck?.reviewQueue.length || 0;
+  const scanPct = scan?.running && scan.total ? Math.round((scan.done / scan.total) * 100) : 0;
 
   return (
-    <div style={{ minHeight: '100vh', display: 'flex', flexDirection: 'column' }}>
-      <header
-        style={{
-          position: 'sticky',
-          top: 0,
-          zIndex: 40,
-          background: '#151f29',
-          borderBottom: '1px solid var(--color-divider)',
-        }}
-      >
-        <div
-          style={{
-            display: 'flex',
-            alignItems: 'flex-end',
-            gap: 24,
-            padding: '13px 20px 11px',
-            flexWrap: 'wrap',
-          }}
-        >
-          <div style={{ marginRight: 'auto' }}>
-            <div
-              style={{
-                fontFamily: 'var(--font-heading)',
-                fontWeight: 600,
-                fontSize: 20,
-                letterSpacing: '.03em',
-                lineHeight: 1,
-              }}
-            >
-              TERM COMMAND DECK
-            </div>
-            <div style={{ ...mono(10), letterSpacing: '.15em', color: 'var(--color-accent)', marginTop: 4 }}>
-              {h ? h.termLabel : 'FALL 2026 · 4A MECHANICAL'}
-            </div>
+    <div className="flex min-h-screen">
+      {/* ── sidebar ─────────────────────────────────────────────────────── */}
+      <aside className="sticky top-0 hidden h-screen w-[264px] shrink-0 flex-col gap-5 overflow-y-auto border-r border-border bg-card/60 px-3 pb-4 pt-6 lg:flex">
+        <div className="px-3">
+          <div className="font-display text-title-3 font-bold tracking-tight">Term Command Deck</div>
+          <div className="mt-0.5 text-footnote text-muted-foreground">
+            {h ? `Fall 2026 · Week ${h.weekNo === 'RD' ? '— reading' : `${Number(h.weekNo)} of ${h.lectureWeeks}`}` : 'Fall 2026'}
           </div>
-
-          {h && (
-            <div style={{ display: 'flex', gap: 20, flexWrap: 'wrap', alignItems: 'flex-end' }}>
-              <div>
-                <div style={kicker}>DAY</div>
-                <div style={stat}>{h.dayStr}</div>
-              </div>
-              <div>
-                <div style={kicker}>WEEK</div>
-                <div style={stat}>{h.weekStr}</div>
-              </div>
-              <div>
-                <div style={kicker}>UNBANKED</div>
-                <div style={{ ...stat, color: 'var(--sig)' }}>{h.unbankedStr}</div>
-              </div>
-              <div>
-                <div style={kicker}>ERROR LOG</div>
-                <div style={{ ...stat, color: 'var(--color-accent)' }}>{h.errorTotalStr}</div>
-              </div>
-              <div>
-                <div style={kicker}>PRACTICE</div>
-                <div style={stat}>{h.practiceStreakStr}</div>
-              </div>
-              <div>
-                <div style={kicker}>REVIEWS</div>
-                <div style={stat}>{h.reviewStreakStr}</div>
-              </div>
-            </div>
-          )}
-
-          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 3, flex: 'none' }}>
-            <button
-              className="btn btn-secondary"
-              onClick={doScan}
-              disabled={!!scan?.running}
-              style={{
-                fontSize: 12.5,
-                letterSpacing: '.08em',
-                padding: '7px 12px',
-                gap: 8,
-                whiteSpace: 'nowrap',
-              }}
-            >
-              <span>{scan?.running ? 'SCANNING…' : 'RESCAN'}</span>
-              <span style={{ ...mono(10), border: '1px solid var(--color-divider)', padding: '0 4px' }}>R</span>
-            </button>
-            <span style={{ ...mono(9.5), letterSpacing: '.08em', color: 'rgba(238,243,248,.4)' }}>
-              {scan?.running
-                ? scan.total
-                  ? `${scan.done}/${scan.total}`
-                  : 'starting'
-                : lastScanLabel(state?.settings?.lastScannedAt)}
-            </span>
-          </div>
-
-          <button
-            className="btn btn-primary"
-            onClick={openStuck}
-            style={{
-              fontSize: 13,
-              letterSpacing: '.08em',
-              padding: '9px 14px',
-              gap: 9,
-              whiteSpace: 'nowrap',
-              flex: 'none',
-            }}
-          >
-            <span>
-              {h && h.openConceptCount && !stuck
-                ? `I'M STUCK · ${h.openConceptCount} OPEN`
-                : "I'M STUCK"}
-            </span>
-            <span style={{ ...mono(10), border: '1px solid rgba(21,31,41,.35)', padding: '0 4px' }}>
-              S
-            </span>
-          </button>
+          {h && <Progress value={h.termPct} className="mt-3 h-1" />}
         </div>
 
-        <div style={{ height: 2, background: 'rgba(238,243,248,.1)' }}>
-          {h && <div style={h.termBarStyle} />}
-        </div>
+        <nav className="flex flex-col gap-0.5" aria-label="Views">
+          {VIEWS.map((v, i) => {
+            const Icon = v.icon;
+            const on = view === v.id;
+            return (
+              <button
+                key={v.id}
+                onClick={() => setView(v.id)}
+                aria-current={on ? 'page' : undefined}
+                className={cn(
+                  'group flex h-9 items-center gap-3 rounded-[10px] px-3 text-subhead font-medium transition-colors',
+                  on ? 'bg-primary text-primary-foreground' : 'text-foreground hover:bg-secondary'
+                )}
+              >
+                <Icon className={cn('size-[18px] shrink-0', on ? '' : 'text-tint-blue')} strokeWidth={2} />
+                <span className="flex-1 text-left">{v.label}</span>
+                {v.id === 'queue' && queueCount > 0 && (
+                  <span
+                    className={cn(
+                      'min-w-5 rounded-full px-1.5 text-center text-caption font-semibold tabular',
+                      on ? 'bg-white/25 text-white' : deck.conflictRows.length ? 'bg-ios-orange text-white' : 'bg-secondary text-muted-foreground'
+                    )}
+                  >
+                    {queueCount}
+                  </span>
+                )}
+                <span className={cn('text-caption-2 tabular', on ? 'text-white/70' : 'text-label-3')}>{i + 1}</span>
+              </button>
+            );
+          })}
+        </nav>
 
-        {scan?.running && (
-          <div
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: 12,
-              padding: '6px 20px',
-              background: 'rgba(148,188,227,.08)',
-              borderBottom: '1px solid var(--color-divider)',
-              ...mono(11),
-            }}
-          >
-            <span style={{ color: 'var(--color-accent)', letterSpacing: '.1em', whiteSpace: 'nowrap' }}>
-              {scan.phase}
-            </span>
-            <div style={{ flex: 1, minWidth: 60, height: 3, background: 'rgba(238,243,248,.12)' }}>
-              <div
-                style={{
-                  width: scan.total ? `${Math.round((scan.done / scan.total) * 100)}%` : '18%',
-                  height: '100%',
-                  background: 'var(--color-accent)',
-                  transition: 'width .12s linear',
-                }}
-              />
-            </div>
-            <span style={{ color: 'rgba(238,243,248,.55)', whiteSpace: 'nowrap' }}>
-              {scan.total ? `${scan.done} / ${scan.total}` : ''}
-            </span>
-            <span
-              style={{
-                color: 'rgba(238,243,248,.4)',
-                overflow: 'hidden',
-                textOverflow: 'ellipsis',
-                whiteSpace: 'nowrap',
-                maxWidth: 320,
-              }}
-            >
-              {scan.file}
-            </span>
+        {h && (
+          <div className="mx-1 grid grid-cols-2 gap-x-3 gap-y-3 rounded-2xl bg-card p-4">
+            <MiniStat label="Day" value={h.dayStr} />
+            <MiniStat label="Unbanked" value={h.unbankedStr} tone="orange" />
+            <MiniStat label="Errors" value={h.errorTotalStr} tone="blue" />
+            <MiniStat label="Practice" value={h.practiceStreakStr} />
+            <MiniStat label="Reviews" value={h.reviewStreakStr} />
+            <MiniStat label="Stuck" value={h.openConceptCount || '0'} tone={h.openConceptCount ? 'orange' : undefined} />
           </div>
         )}
 
-        <nav style={{ display: 'flex', gap: 4, padding: '0 18px', flexWrap: 'wrap' }}>
-          {VIEWS.map((v) => (
-            <button
-              key={v}
-              onClick={() => setView(v)}
-              style={{
-                appearance: 'none',
-                background: 'transparent',
-                border: 0,
-                padding: '11px 10px 9px',
-                cursor: 'pointer',
-                fontFamily: 'var(--font-heading)',
-                fontWeight: 600,
-                fontSize: 13.5,
-                letterSpacing: '.09em',
-                textTransform: 'uppercase',
-                position: 'relative',
-                whiteSpace: 'nowrap',
-                color: view === v ? 'var(--color-accent)' : 'rgba(238,243,248,.5)',
-              }}
-            >
-              {VIEW_LABELS[v]}
-              {v === 'queue' && deck?.reviewQueue.length > 0 && (
-                <span
-                  style={{
-                    ...mono(9.5),
-                    marginLeft: 6,
-                    background: deck.conflictRows.length ? 'var(--sig)' : 'var(--color-accent)',
-                    color: '#151f29',
-                    padding: '1px 5px',
-                    letterSpacing: '.06em',
-                  }}
-                >
-                  {deck.reviewQueue.length}
-                </span>
-              )}
-              {view === v && (
-                <span
-                  style={{
-                    position: 'absolute',
-                    left: 6,
-                    right: 6,
-                    bottom: -1,
-                    height: 2,
-                    background: 'var(--color-accent)',
-                  }}
-                />
-              )}
-            </button>
-          ))}
-        </nav>
-      </header>
+        <div className="mt-auto flex flex-col gap-2 px-3 text-caption text-muted-foreground">
+          <PhoneSyncLine sync={state?.meta?.phoneSync} />
+          <div className="flex flex-wrap gap-x-3 gap-y-1.5">
+            <span className="inline-flex items-center gap-1"><Kbd>S</Kbd> stuck</span>
+            <span className="inline-flex items-center gap-1"><Kbd>E</Kbd> error</span>
+            <span className="inline-flex items-center gap-1"><Kbd>W</Kbd> review</span>
+            <span className="inline-flex items-center gap-1"><Kbd>R</Kbd> rescan</span>
+          </div>
+        </div>
+      </aside>
 
+      {/* ── main ────────────────────────────────────────────────────────── */}
+      <div className="flex min-w-0 flex-1 flex-col">
+        <header className="material sticky top-0 z-30 border-b border-border">
+          <div className="flex items-center gap-3 px-5 py-2.5 sm:px-8">
+            {/* Narrow windows lose the sidebar; the views move up here. */}
+            <nav className="no-scrollbar -mx-1 flex min-w-0 flex-1 gap-1 overflow-x-auto lg:hidden" aria-label="Views">
+              {VIEWS.map((v) => (
+                <button
+                  key={v.id}
+                  onClick={() => setView(v.id)}
+                  className={cn(
+                    'h-8 shrink-0 rounded-full px-3 text-footnote font-semibold',
+                    view === v.id ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:bg-secondary'
+                  )}
+                >
+                  {v.label}
+                </button>
+              ))}
+            </nav>
+            <div className="hidden min-w-0 flex-1 truncate text-footnote text-muted-foreground lg:block">
+              {scan?.running
+                ? `${scan.phase}${scan.total ? ` · ${scan.done} of ${scan.total}` : ''}`
+                : lastScanLabel(state?.settings?.lastScannedAt)}
+            </div>
+            <Button variant="gray" onClick={doScan} disabled={!!scan?.running} className="shrink-0">
+              <RefreshCw className={cn(scan?.running && 'animate-spin')} />
+              {scan?.running ? 'Scanning' : 'Rescan'}
+            </Button>
+            <Button onClick={openStuck} className="shrink-0">
+              <LifeBuoy />
+              I’m stuck
+              {h?.openConceptCount > 0 && !stuck && (
+                <span className="rounded-full bg-white/25 px-1.5 text-caption tabular">{h.openConceptCount}</span>
+              )}
+            </Button>
+          </div>
+          {scan?.running && (
+            <div className="px-5 pb-2 sm:px-8">
+              <Progress value={scan.total ? scanPct : 12} className="h-1" />
+              {scan.file && <div className="mt-1 truncate text-caption text-muted-foreground">{scan.file}</div>}
+            </div>
+          )}
+        </header>
+
+        <main className="mx-auto w-full max-w-[1180px] flex-1 px-5 pb-16 pt-7 sm:px-8">
+          <div className="mb-6">
+            <h1 className="font-display text-large-title font-bold tracking-tight">{meta.label}</h1>
+            <p className="mt-1 max-w-3xl text-subhead text-muted-foreground text-pretty">{meta.subtitle}</p>
+          </div>
+
+          {!deck && <div className="animate-blip text-subhead text-muted-foreground">Loading your deck…</div>}
+
+          {deck && view === 'today' && (
+            <Today
+              deck={deck}
+              actions={actions}
+              now={now}
+              onGoQueue={() => setView('queue')}
+              onGoConfig={() => setView('config')}
+            />
+          )}
+          {deck && view === 'triage' && (
+            <Triage
+              deck={deck}
+              actions={actions}
+              showDone={showDone}
+              onToggleDone={() => setShowDone((s) => !s)}
+              onGoConfig={() => setView('config')}
+              onOpenLadder={(id) => setStuck({ phase: 'ladder', conceptId: id, endsAt: 0 })}
+            />
+          )}
+          {deck && view === 'outlook' && <Outlook deck={deck} onGoConfig={() => setView('config')} />}
+          {deck && view === 'retrieval' && (
+            <Retrieval
+              deck={deck}
+              actions={actions}
+              bankCourseId={bankId}
+              onOpenError={() => setErrorForm({ courseId: bankId, topic: '', what: '' })}
+            />
+          )}
+          {deck && view === 'exams' && <Exams deck={deck} />}
+          {deck && view === 'review' && <WeeklyReview deck={deck} onStart={() => setReviewStep(0)} />}
+          {deck && view === 'queue' && <ReviewQueue deck={deck} actions={actions} />}
+          {deck && view === 'calendar' && <TermCalendar deck={deck} actions={actions} />}
+          {deck && view === 'config' && (
+            <Config deck={deck} actions={actions} onAskReset={() => setResetOpen(true)} />
+          )}
+        </main>
+      </div>
+
+      {/* ── toast ───────────────────────────────────────────────────────── */}
       {toast && (
         <div
-          style={{
-            padding: '8px 20px',
-            ...mono(11.5),
-            letterSpacing: '.06em',
-            background: toast.tone === 'error' ? 'rgba(226,145,63,.14)' : 'rgba(148,188,227,.12)',
-            color: toast.tone === 'error' ? 'var(--sig)' : 'var(--color-accent)',
-            borderBottom: '1px solid var(--color-divider)',
-          }}
+          key={toast.key}
+          role="status"
+          className={cn(
+            'material fixed left-1/2 top-4 z-[60] max-w-[min(560px,calc(100vw-2rem))] -translate-x-1/2 rounded-full px-5 py-2.5 text-subhead font-medium shadow-lg shadow-black/10',
+            'animate-in fade-in-0 slide-in-from-top-2',
+            toast.tone === 'error' ? 'text-tint-red' : 'text-foreground'
+          )}
         >
           {toast.message}
         </div>
       )}
 
-      <main style={{ flex: 1, padding: '20px 20px 30px' }}>
-        {!deck && (
-          <div
-            style={{
-              ...mono(12),
-              letterSpacing: '.1em',
-              color: 'var(--color-accent)',
-              padding: '40px 0',
-              animation: 'blip 1.1s infinite',
-            }}
-          >
-            LOADING DECK STATE …
-          </div>
-        )}
-
-        {deck && view === 'today' && (
-          <Today
-            deck={deck}
-            actions={actions}
-            now={now}
-            onGoQueue={() => setView('queue')}
-            onGoConfig={() => setView('config')}
-          />
-        )}
-        {deck && view === 'triage' && (
-          <Triage
-            deck={deck}
-            actions={actions}
-            showDone={showDone}
-            onToggleDone={() => setShowDone((s) => !s)}
-            onGoConfig={() => setView('config')}
-            onOpenLadder={(id) => setStuck({ phase: 'ladder', conceptId: id, endsAt: 0 })}
-          />
-        )}
-        {deck && view === 'retrieval' && (
-          <Retrieval
-            deck={deck}
-            actions={actions}
-            bankCourseId={bankCourseId}
-            onOpenError={() => setErrorForm({ courseId: bankCourseId, topic: '', what: '' })}
-          />
-        )}
-        {deck && view === 'exams' && <Exams deck={deck} />}
-        {deck && view === 'review' && (
-          <WeeklyReview deck={deck} onStart={() => setReviewStep(0)} />
-        )}
-        {deck && view === 'queue' && <ReviewQueue deck={deck} actions={actions} />}
-        {deck && view === 'calendar' && <TermCalendar deck={deck} actions={actions} />}
-        {deck && view === 'config' && <Config deck={deck} actions={actions} onAskReset={() => setResetOpen(true)} />}
-      </main>
-
-      <footer
-        style={{
-          borderTop: '1px solid var(--color-divider)',
-          padding: '10px 20px',
-          display: 'flex',
-          gap: 16,
-          flexWrap: 'wrap',
-          ...mono(10.5),
-          letterSpacing: '.08em',
-          color: 'rgba(238,243,248,.4)',
-        }}
-      >
-        <span>S — STUCK TIMER</span>
-        <span>E — LOG ERROR</span>
-        <span>W — WEEKLY REVIEW</span>
-        <span>R — RESCAN</span>
-        <span>1–8 — VIEWS</span>
-        <span>ESC — CLOSE</span>
-        <span style={{ marginLeft: 'auto' }}>
-          SQLITE · {state?.meta?.dbPath?.split(/[\\/]/).pop() || 'deck.db'}
-        </span>
-      </footer>
-
-      {deck && stuck && (
+      {deck && (
         <StuckDialog
+          open={!!stuck}
           deck={deck}
           phase={stuckPhase}
-          stuck={stuck}
+          stuck={stuck || {}}
           draft={stuckDraft}
           setDraft={setStuckDraft}
           minutes={Number(state?.settings?.stuckMinutes ?? 25)}
           now={now}
           onStart={startStuck}
           onClose={() => setStuck(null)}
-          onEscalateNow={() =>
-            setStuck((s) => ({ phase: 'ladder', conceptId: s.conceptId, endsAt: 0 }))
-          }
+          onEscalateNow={() => setStuck((s) => ({ phase: 'ladder', conceptId: s.conceptId, endsAt: 0 }))}
           actions={actions}
         />
       )}
 
-      {deck && errorForm && (
+      {deck && (
         <ErrorDialog
+          open={!!errorForm}
           deck={deck}
-          form={errorForm}
+          form={errorForm || { courseId: bankId, topic: '', what: '' }}
           setForm={setErrorForm}
           onClose={() => setErrorForm(null)}
           onSave={async () => {
             const f = errorForm;
             if (!f.what.trim() && !f.topic.trim()) return setErrorForm(null);
-            await run(() =>
-              api.addError({ courseId: f.courseId, topic: f.topic, whatIGotWrong: f.what })
-            );
+            await run(() => api.addError({ courseId: f.courseId, topic: f.topic, whatIGotWrong: f.what }), 'Error banked.');
             setBankCourseId(f.courseId);
             setErrorForm(null);
           }}
         />
       )}
 
-      {deck && reviewStep >= 0 && (
+      {deck && (
         <ReviewDialog
+          open={reviewStep >= 0}
           deck={deck}
-          step={reviewStep}
+          step={Math.max(0, reviewStep)}
           setStep={setReviewStep}
           actions={actions}
           reflectionDraft={reflectionDraft}
@@ -607,28 +501,62 @@ export default function App() {
         />
       )}
 
-      {resetOpen && (
-        <ResetDialog
-          onCancel={() => setResetOpen(false)}
-          onConfirm={async () => {
-            await run(() => api.reset(), 'Deck reset to the seeded term.');
-            setResetOpen(false);
-          }}
-        />
-      )}
+      <ResetDialog
+        open={resetOpen}
+        onCancel={() => setResetOpen(false)}
+        onConfirm={async () => {
+          await run(() => api.reset(), 'Deck reset to the seeded term.');
+          setResetOpen(false);
+        }}
+      />
     </div>
   );
 }
 
-/** "scanned 4m ago" — the freshness of the deck, next to the Rescan button. */
-function lastScanLabel(iso) {
-  if (!iso) return 'never scanned';
-  const t = Date.parse(iso);
-  if (Number.isNaN(t)) return 'never scanned';
-  const mins = Math.round((Date.now() - t) / 60000);
-  if (mins < 1) return 'scanned just now';
-  if (mins < 60) return `scanned ${mins}m ago`;
+function MiniStat({ label, value, tone }) {
+  return (
+    <div className="min-w-0">
+      <div className="text-caption-2 font-medium uppercase tracking-wide text-muted-foreground">{label}</div>
+      <div
+        className={cn(
+          'font-display text-headline font-semibold tabular',
+          tone === 'orange' ? 'text-tint-orange' : tone === 'blue' ? 'text-tint-blue' : 'text-foreground'
+        )}
+      >
+        {value}
+      </div>
+    </div>
+  );
+}
+
+/** Whether the phone copy is current. Silent when phone sync is off. */
+function PhoneSyncLine({ sync }) {
+  if (!sync?.enabled) return null;
+  const ok = !sync.lastError;
+  return (
+    <div className={cn('flex items-center gap-1.5', ok ? '' : 'text-tint-orange')} title={sync.lastError || ''}>
+      <Smartphone className="size-3.5" />
+      {ok
+        ? sync.lastSyncAt
+          ? `iPhone up to date · ${ago(sync.lastSyncAt)}`
+          : 'iPhone · waiting for first sync'
+        : 'iPhone sync failing — hover for why'}
+    </div>
+  );
+}
+
+function ago(iso) {
+  const mins = Math.round((Date.now() - Date.parse(iso)) / 60000);
+  if (!Number.isFinite(mins) || mins < 1) return 'just now';
+  if (mins < 60) return `${mins}m ago`;
   const hrs = Math.round(mins / 60);
-  if (hrs < 24) return `scanned ${hrs}h ago`;
-  return `scanned ${fmtShort(iso.slice(0, 10))}`;
+  return hrs < 24 ? `${hrs}h ago` : fmtShort(iso.slice(0, 10));
+}
+
+/** "Scanned 4m ago" — the freshness of the deck, beside the Rescan button. */
+function lastScanLabel(iso) {
+  if (!iso) return 'Never scanned';
+  const t = Date.parse(iso);
+  if (Number.isNaN(t)) return 'Never scanned';
+  return `Course files scanned ${ago(iso)}`;
 }
