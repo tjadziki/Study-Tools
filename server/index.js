@@ -433,7 +433,7 @@ const ALLOWED_SETTINGS = new Set([
   // the planner
   'dayStartMin', 'dayEndMin', 'dailyTargetHours', 'weekendTargetHours',
   'minBlockMinutes', 'maxBlockMinutes', 'breakMinutes', 'classBufferMinutes',
-  'planHorizonDays',
+  'planHorizonDays', 'urgentSlackDays', 'focusHoursPerDay',
 ]);
 
 app.post('/api/settings', (req, res) => {

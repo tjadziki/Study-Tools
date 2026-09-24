@@ -5,12 +5,16 @@
 // moved (due -> dueDate, est -> estHours, course -> courseId).
 
 import { d, iso, today, fmt, fmtShort, daysTo, shift, fridays, hm } from './dates.js';
-import { planWeek } from './plan.js';
+import { planWeek, rankTasks, rankOptions, TIER, TIER_LABEL } from './plan.js';
 
 /* ── the triage priority score ──────────────────────────────────────────────
    (weight/estHours x 10) + (1/max(daysUntilDue,1) x 30) + (droppable ? -5 : 0)
-   Unchanged from the design file. The reasoning is surfaced on every card so
-   the ranking can always be argued with.
+   Unchanged from the design file, and still what orders every task that has
+   room to breathe. It is no longer the whole ranking: its urgency term caps
+   at 30, so on its own it ranks a cheap task due in a month above real work
+   due tomorrow. Close deadlines are ranked by slack instead — see rankTasks
+   in plan.js. The reasoning is surfaced on every card so the ranking can
+   always be argued with.
    ───────────────────────────────────────────────────────────────────────── */
 export function score(t, now) {
   const est = Math.max(0.25, Number(t.estHours) || 1);
@@ -30,8 +34,28 @@ export function reasonLine(t) {
         ? `${-t.days} days overdue`
         : t.days === 0
           ? 'due today'
-          : `due in ${t.days} days`;
+          : t.days === 1
+            ? 'due tomorrow'
+            : `due in ${t.days} days`;
+  // An urgent task is ranked by its deadline, not its marks per hour, so the
+  // line says so — otherwise a 30.0 sitting above a 62.7 looks like a bug.
+  if (t.tier === 0 && t.slack != null) {
+    const est = `${Number(t.estHours)} h of work`;
+    const slack =
+      t.days < 0
+        ? 'overdue — submit or mark it done'
+        : t.slack <= 0
+          ? 'no slack left — ranked by deadline'
+          : `${slackStr(t.slack)} of slack — ranked by deadline`;
+    return `${est} · ${when} · ${slack}`;
+  }
   return `${t.mph.toFixed(1)} marks/hour · ${when} · ${t.droppable ? 'droppable' : 'cannot be dropped'}`;
+}
+
+/** 1.5 -> "1.5 days", 1 -> "1 day", -2 -> "-2 days" */
+export function slackStr(slack) {
+  const r = Math.round(slack * 10) / 10;
+  return `${r} day${Math.abs(r) === 1 ? '' : 's'}`;
 }
 
 const TAPER = [
@@ -105,10 +129,11 @@ export function derive(state, now) {
   const queue = open.filter(
     (t) => t.kind !== 'exam' || (t.dueDate != null && daysTo(t.dueDate, now) <= horizon)
   );
-  const scored = queue
-    .map((t) => ({ ...t, ...score(t, now) }))
-    .sort((a, b) => b.priority - a.priority);
-  const maxP = scored.length ? Math.max(1, scored[0].priority) : 1;
+  const scored = rankTasks(
+    queue.map((t) => ({ ...t, ...score(t, now) })),
+    rankOptions(settings)
+  );
+  const maxP = scored.length ? Math.max(1, ...scored.map((t) => t.priority)) : 1;
 
   const vm = (t, i) => ({
     id: t.id,
@@ -129,6 +154,13 @@ export function derive(state, now) {
             ? 'today'
             : `in ${t.days} d`,
     priorityStr: t.priority.toFixed(1),
+    // The number that actually decided the rank. For an urgent task that is
+    // its slack, not its priority score — showing the score there would put a
+    // 30.0 above a 62.7 with no visible reason.
+    rankLabel: t.tier === TIER.URGENT ? 'SLACK' : 'PRIORITY',
+    rankStr: t.tier === TIER.URGENT ? (t.days < 0 ? 'late' : `${(Math.round(t.slack * 10) / 10).toFixed(1)} d`) : t.priority.toFixed(1),
+    tier: t.tier,
+    tierLabel: TIER_LABEL[t.tier],
     reason: reasonLine(t),
     isTrap: !!t.trap,
     isFree: !!(t.free || (t.droppable && t.mph >= 4)),

@@ -26,7 +26,9 @@ export default function Triage({ deck, actions, showDone, onToggleDone, onGoConf
         <div style={{ display: 'flex', alignItems: 'baseline', gap: 12, flexWrap: 'wrap' }}>
           <h6 style={{ margin: 0, color: 'var(--color-accent)', whiteSpace: 'nowrap' }}>Triage queue</h6>
           <span style={{ fontSize: 12, color: 'rgba(238,243,248,.5)' }}>
-            <span style={{ whiteSpace: 'nowrap' }}>(marks/hour × 10) + (urgency × 30) − 5 if droppable</span>
+            <span style={{ whiteSpace: 'nowrap' }}>within a week of slack: least slack first</span>
+            {' · '}
+            <span style={{ whiteSpace: 'nowrap' }}>otherwise (marks/hour × 10) + (urgency × 30) − 5 if droppable</span>
             {' · '}
             <span style={{ whiteSpace: 'nowrap' }}>exams enter the queue at T-{rules.horizon}</span>
           </span>
@@ -151,8 +153,8 @@ export default function Triage({ deck, actions, showDone, onToggleDone, onGoConf
                   <div style={mono(19, { lineHeight: 1.1 })}>{top.estStr}</div>
                 </div>
                 <div>
-                  <div style={kicker}>PRIORITY</div>
-                  <div style={mono(34, { lineHeight: 1.05, color: 'var(--sig)' })}>{top.priorityStr}</div>
+                  <div style={kicker}>{top.rankLabel}</div>
+                  <div style={mono(34, { lineHeight: 1.05, color: 'var(--sig)' })}>{top.rankStr}</div>
                   <div style={{ ...kicker, marginTop: 14 }}>DUE</div>
                   <div style={mono(14, { lineHeight: 1.25 })}>{top.dueStr}</div>
                   <div style={mono(11, { color: 'var(--sig)' })}>{top.daysStr}</div>
@@ -170,9 +172,25 @@ export default function Triage({ deck, actions, showDone, onToggleDone, onGoConf
 
         {/* ── ranked rest ───────────────────────────────────────────────── */}
         <div style={{ display: 'flex', flexDirection: 'column' }}>
-          {triage.rest.map((r) => (
+          {triage.rest.map((r, i) => (
+            <React.Fragment key={r.id}>
+            {/* A divider wherever the ranking rule changes — within "urgent"
+                the order is by slack, everywhere else by priority score, and
+                the reader needs to see which is which. */}
+            {(i === 0 ? triage.top?.tier !== r.tier : triage.rest[i - 1].tier !== r.tier) && (
+              <div
+                style={{
+                  ...mono(9.5),
+                  letterSpacing: '.16em',
+                  textTransform: 'uppercase',
+                  color: r.tier === 0 ? 'var(--sig)' : 'rgba(238,243,248,.45)',
+                  padding: '16px 0 6px',
+                }}
+              >
+                {r.tierLabel}
+              </div>
+            )}
             <div
-              key={r.id}
               style={{
                 display: 'flex',
                 gap: 14,
@@ -238,8 +256,9 @@ export default function Triage({ deck, actions, showDone, onToggleDone, onGoConf
                   <div style={mono(12.5)}>{r.dueStr}</div>
                   <div style={mono(10.5, { color: 'rgba(238,243,248,.45)' })}>{r.daysStr}</div>
                 </div>
-                <div style={{ textAlign: 'right', minWidth: 40 }}>
-                  <div style={mono(16, { color: 'var(--sig)' })}>{r.priorityStr}</div>
+                <div style={{ textAlign: 'right', minWidth: 52 }}>
+                  <div style={mono(16, { color: 'var(--sig)' })}>{r.rankStr}</div>
+                  <div style={mono(8.5, { color: 'rgba(238,243,248,.35)', letterSpacing: '.12em' })}>{r.rankLabel}</div>
                 </div>
                 <button
                   className="btn btn-secondary"
@@ -250,6 +269,7 @@ export default function Triage({ deck, actions, showDone, onToggleDone, onGoConf
                 </button>
               </div>
             </div>
+            </React.Fragment>
           ))}
         </div>
 

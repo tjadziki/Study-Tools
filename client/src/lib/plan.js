@@ -26,6 +26,87 @@ export function hhmm(min) {
   return `${String(Math.floor(m / 60)).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}`;
 }
 
+/* ── ranking ─────────────────────────────────────────────────────────────────
+   One rule, used by both the Triage list and the daily plan, so the two can
+   never disagree about what matters most.
+
+   The priority score — (marks/hour × 10) + (30 / days) − 5 if droppable — is
+   good at one thing: choosing between tasks that all have room to breathe. It
+   is bad at deadlines, because its urgency term can never exceed 30 while a
+   45-minute task worth 5% scores 66.7 on value alone. On that score alone, an
+   assignment due tomorrow ranks below a discussion post due in four weeks.
+
+   So a deadline that is actually close stops competing on value. Each dated
+   task gets a *slack*: the days left before it is due, minus the days of work
+   it still needs at a sustainable pace. Once slack drops to a week or less the
+   task is urgent, and urgent tasks go least-slack-first. That is
+   earliest-deadline-first corrected for size — a 40-hour project turns urgent
+   weeks before its date, a 30-minute quiz only days before.
+
+     tier 0  urgent    slack ≤ urgentSlackDays — least slack first
+     tier 1  soon      due inside the horizon  — priority score
+     tier 2  undated   no date at all          — priority score
+     tier 3  later     due beyond the horizon  — priority score
+
+   Undated sits below dated-and-soon because you cannot miss a deadline you
+   have not got, but above "later" because a course that never posts dates is
+   the one most likely to ambush you.
+   ────────────────────────────────────────────────────────────────────────── */
+
+export const TIER = { URGENT: 0, SOON: 1, UNDATED: 2, LATER: 3 };
+export const TIER_LABEL = ['Urgent — least slack first', 'Coming up', 'No date yet', 'Later'];
+
+const undatedDays = (days) => days == null || days === 999;
+
+/**
+ * Days of breathing room: days until due, minus the days of work left at
+ * `hoursPerDay` of focused time on this one task. Negative means it cannot be
+ * finished at that pace — work faster or start now. Null when undated.
+ */
+export function slackDays(t, hoursPerDay = 2) {
+  if (undatedDays(t.days)) return null;
+  const est = Math.max(0, Number(t.estHours) || 0);
+  return t.days - est / Math.max(0.25, hoursPerDay);
+}
+
+export function tierOf(t, { horizon = 21, urgentSlack = 7, hoursPerDay = 2 } = {}) {
+  if (undatedDays(t.days)) return TIER.UNDATED;
+  const slack = slackDays(t, hoursPerDay);
+  if (t.days < 0 || slack <= urgentSlack) return TIER.URGENT;
+  if (t.days <= horizon) return TIER.SOON;
+  return TIER.LATER;
+}
+
+/** Read the ranking knobs out of the settings table, with the seeded defaults. */
+export function rankOptions(settings = {}) {
+  const n = (k, d) => {
+    const v = Number(settings[k]);
+    return Number.isFinite(v) ? v : d;
+  };
+  return {
+    horizon: n('planHorizonDays', 21),
+    urgentSlack: n('urgentSlackDays', 7),
+    hoursPerDay: n('focusHoursPerDay', 2),
+  };
+}
+
+/**
+ * Annotate scored tasks with slack and tier and put them in rank order.
+ * Expects each task to carry `days` and `priority` already. Never mutates.
+ * A total order — ids break every tie — so the list cannot reshuffle itself
+ * between two renders of the same data.
+ */
+export function rankTasks(tasks, opts = {}) {
+  return tasks
+    .map((t) => ({ ...t, slack: slackDays(t, opts.hoursPerDay), tier: tierOf(t, opts) }))
+    .sort((a, b) => {
+      if (a.tier !== b.tier) return a.tier - b.tier;
+      if (a.tier === TIER.URGENT && a.slack !== b.slack) return a.slack - b.slack;
+      if (a.priority !== b.priority) return b.priority - a.priority;
+      return String(a.id).localeCompare(String(b.id));
+    });
+}
+
 /** Merge overlapping or touching [start, end] ranges. */
 export function mergeRanges(ranges) {
   const sorted = ranges
@@ -267,32 +348,22 @@ export function planDay({
   const left = (t) => Math.max(0, Number(t.estHours || 1) * 60 - (budget[t.id] || 0));
   const pool = scored.filter((t) => left(t) > 0);
 
-  // Marks per hour alone would hand today to whatever is cheapest, even when
-  // it is due in two months: five 45-minute discussion posts score higher than
-  // the project worth 18% of the course. So work sorts into three tiers and
-  // the day is built from the first that still has something in it.
-  //
-  //   near     a real deadline inside the horizon (or already past)
-  //   unscoped no date at all
-  //   far      dated, but beyond the horizon
-  //
-  // Undated work sits in the middle rather than at the top. You cannot miss a
-  // deadline you have not got, so it must not outrank one you have — but it
-  // still beats pulling December's work into September, because a course whose
-  // dates were never posted is the one most likely to ambush you.
-  const horizon = num('planHorizonDays', 21);
-  const undated = (t) => t.days == null || t.days === 999;
-  const near = pool.filter((t) => !undated(t) && t.days <= horizon);
-  const unscoped = pool.filter(undated);
-  const far = pool.filter((t) => !undated(t) && t.days > horizon);
+  // The same tiers the Triage list ranks by (see rankTasks). Ranking the pool
+  // here too, rather than trusting the caller's order, is what guarantees the
+  // plan and the list agree: a task urgent in one is urgent in the other.
+  const opts = rankOptions(settings);
+  const ranked = rankTasks(pool, opts);
+  const near = ranked.filter((t) => t.tier === TIER.URGENT || t.tier === TIER.SOON);
+  const unscoped = ranked.filter((t) => t.tier === TIER.UNDATED);
+  const far = ranked.filter((t) => t.tier === TIER.LATER);
 
   // A task gets at most two blocks a day, so one deliverable cannot swallow a
-  // whole Friday — unless it is due inside 48 hours, when it should. Undated
+  // whole Friday — unless it has run out of slack, when it should. Undated
   // work gets one: the instruction for it is "scope it", and scoping does not
   // take an afternoon.
   const slotCap = (t) => {
-    if (undated(t)) return 1;
-    return t.days <= 2 ? 99 : 2;
+    if (t.tier === TIER.UNDATED) return 1;
+    return t.days <= 2 || (t.slack != null && t.slack <= 1) ? 99 : 2;
   };
   const taken = {};
   const available = (list) => list.find((x) => (taken[x.id] || 0) < slotCap(x) && left(x) > 0);

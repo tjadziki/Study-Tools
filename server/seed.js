@@ -288,4 +288,9 @@ export const SETTINGS = {
   // met — otherwise a 45-minute discussion post due in November outscores the
   // project worth 18% of the course, purely on marks per hour.
   planHorizonDays: '21',
+  // When a deadline stops competing on marks per hour. Slack is days left
+  // minus the days of work a task still needs at focusHoursPerDay; once it
+  // drops to urgentSlackDays, the task is ranked by deadline instead.
+  urgentSlackDays: '7',
+  focusHoursPerDay: '2',
 };

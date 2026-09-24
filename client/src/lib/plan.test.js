@@ -146,8 +146,9 @@ test('the highest-priority task is what the first working slot gets', () => {
   assert.equal(work.title, 'Project 1');
 });
 
-test('one task cannot take more than two blocks in a day while it is far off', () => {
-  const day = planDay(base({ date: '2026-09-19', scored: [task('t1', { estHours: 40 })] }));
+test('one task cannot take more than two blocks in a day while it has slack', () => {
+  // 20 hours due in 18 days: 10 days of work, 8 of slack. Not urgent.
+  const day = planDay(base({ date: '2026-09-19', scored: [task('t1', { estHours: 20, days: 18 })] }));
   const mine = day.slots.filter((s) => s.taskId === 't1');
   assert.equal(mine.length, 2);
 });
@@ -280,10 +281,10 @@ test('a cheap task months out does not outrank real work inside the horizon', ()
   );
   const titles = day.slots.map((s) => s.title);
   assert.equal(titles[0], 'Project 1', 'the day must open on the work that is actually near');
-  assert.ok(
-    titles.indexOf('Project 1') < titles.indexOf('Discussion 5'),
-    `near work must come first, got ${titles.join(', ')}`
-  );
+  // 22 hours due in 12 days leaves 1 day of slack, so Project 1 may rightly
+  // take every block and the discussion never appear at all.
+  const iD = titles.indexOf('Discussion 5');
+  assert.ok(iD === -1 || iD > titles.indexOf('Project 1'), `near work must come first, got ${titles.join(', ')}`);
 });
 
 test('work beyond the horizon still fills the blocks past the target', () => {
@@ -478,4 +479,10 @@ test('the consolidation block is worded for the kind of class it follows', () =>
   assert.match(lab.title, /lab/i);
   assert.match(prj.title, /project meeting/i);
   assert.doesNotMatch(prj.title, /lecture/i);
+});
+
+test('a task that has run out of slack may take the whole day', () => {
+  // 40 hours due in 10 days is 20 days of work at 2 h/day — already behind.
+  const day = planDay(base({ date: '2026-09-19', scored: [task('t1', { estHours: 40, days: 10 })] }));
+  assert.ok(day.slots.filter((s) => s.taskId === 't1').length > 2);
 });
